@@ -136,7 +136,7 @@ Then open <http://127.0.0.1:4173> on the client. Keep the terminal session open.
 
 All `/api/v1` routes and `/docs` require `Authorization: Bearer <API_KEY>`. Only `/health/live` and `/health/ready` are public and minimal. The generated contract is [backend/openapi.json](backend/openapi.json).
 
-For the deployed service, open <https://api-whisper.mangagaki.net/docs> and use **Authorize** with the bearer token. The OpenAPI server is relative to the current host, so Swagger's **Try it out** calls the same deployment that served the documentation.
+The deployed API base is `https://api-whisper.mangagaki.net`. Its Swagger UI is at `/docs`, but the documentation itself is protected, so load it with a client or browser header injector that sends `Authorization: Bearer <API_KEY>`, then use **Authorize** for **Try it out**. The OpenAPI server is relative to the current host, so those calls target the deployment that served the documentation. The checked-in [OpenAPI document](backend/openapi.json) can also be imported directly into an API client.
 
 For files that may exceed an edge proxy's single-request limit, use the resumable CLI instead of the legacy multipart endpoint. It requires only Node.js 22, sends server-defined 20 MiB chunks with up to three concurrent requests, retries transient failures, and resumes an interrupted upload from the parts already accepted by the server:
 

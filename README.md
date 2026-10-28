@@ -184,13 +184,13 @@ Apply once:
 docker compose run --rm worker node dist/cli/cleanup.js --apply
 ```
 
-Enable the opt-in daily cleanup service:
+The standard Compose deployment starts cleanup automatically, applies the policy once at startup, and repeats every 24 hours:
 
 ```sh
-docker compose --profile retention up -d cleanup
+docker compose up -d cleanup
 ```
 
-Cleanup permanently deletes expired job rows and media, removes terminal upload staging, and retains expired/aborted upload status briefly before purging old session rows. Back up first if recovery could be required. Stop the cleanup profile with `docker compose --profile retention stop cleanup`.
+`CLEANUP_INTERVAL_HOURS` changes the schedule. Cleanup permanently deletes expired job rows and media, removes terminal upload staging, purges completed upload-session metadata after completed-job retention, and retains expired/aborted upload status briefly before purging old session rows. Active, queued, processing, pausing, paused, and finalizing work is never removed. Back up first if recovery could be required. Stop automatic cleanup with `docker compose stop cleanup`; the next ordinary `docker compose up -d` starts it again.
 
 ## Backup, restore, reset, and upgrade
 

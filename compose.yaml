@@ -104,9 +104,9 @@ services:
 
   cleanup:
     <<: *common
-    profiles: ["retention"]
-    command: ["node", "dist/cli/cleanup.js", "--apply", "--schedule-hours", "24"]
+    command: ["node", "dist/cli/cleanup.js", "--apply", "--schedule-hours", "${CLEANUP_INTERVAL_HOURS:-24}"]
     depends_on:
       migrate:
         condition: service_completed_successfully
+    stop_grace_period: 10s
 

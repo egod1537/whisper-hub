@@ -1,0 +1,26 @@
+MILESTONE 07 — AUTOMATED TESTS AND ACCEPTANCE
+Use pnpm lint, pnpm typecheck, pnpm test, pnpm build and current CI workflow. Add tests before marking feature complete.
+
+TEST CASES
+1. Create 2GiB-capable upload session, validate chunk count/size, reject too-large aggregate input.
+2. Upload several binary chunks and confirm exact reconstruction, hash, bytes and original metadata/options.
+3. One missing chunk -> incomplete; final request reports missing chunk and does not queue.
+4. Wrong length, wrong chunk hash, duplicate same chunk, duplicate different chunk, wrong indices, expired id -> documented codes.
+5. Simultaneous PUT same index from separate API instances -> no overwrite/corruption.
+6. Concurrent POST complete -> exactly one job ID, exactly one queue row; retry completion idempotent.
+7. Crash/restart after each key phase (part temp write, rename, DB insert, assembling, final file rename); reconcile safely; no phantom queued jobs.
+8. Resume after UI reload (reselect file) and after Docker restart; skip verified parts based on server status.
+9. Session expiration and cancellation remove staging safely but never a job source.
+10. Unauthorized requests 401 for every new endpoint; path traversal and symlink attempts impossible; limits enforced without buffering large uploads.
+11. Existing POST /api/v1/jobs, GET /jobs, job cancel/retry/results unchanged and passing tests.
+12. Frontend mocked upload flow: one 20MiB part, three concurrent parts, retries, finish, queue status, download, accessible mobile layout.
+13. Cloudflare smoke: real 150MiB+ sample through proxied hostname; no HTTP 413 for 20MiB requests; verify full file and queue result. Local-only tests are NOT evidence Cloudflare works.
+14. Provider test on actual Mac mini Metal remains manual, explicitly reported.
+
+ACCEPTANCE
+- End-to-end >=150MiB upload through actual Cloudflare proxy; assembled file hash equal source; exactly one queued job; transcript downloadable after inference.
+- Browser handles refresh/reselection and transient failure; no 100MB single HTTP POST.
+- Existing tests green. Security limits documented and validated.
+- Codex final report: files changed, API changes/OpenAPI generated, env vars, migrations, commands run, failed or unverified checks, deployment/migration steps, commit SHAs.
+
+Suggested client smoke sequence: create session -> send parts with hashes -> GET status -> complete -> poll upload session completed -> poll GET /api/v1/jobs/:id -> download txt. Never claim live Cloudflare/Metal testing if unavailable.

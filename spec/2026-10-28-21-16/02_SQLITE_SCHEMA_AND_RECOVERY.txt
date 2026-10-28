@@ -1,0 +1,20 @@
+MILESTONE 02 — PERSISTENT UPLOAD SESSION STATE
+Inspect existing SQLite migration mechanism; ADD forward migration(s) only. No destructive DB resets or incompatible edits.
+
+Suggested tables (adapt names conventions):
+upload_sessions: id PK, status uploading|finalizing|completed|aborted|expired, display_filename, total_size_bytes, expected_sha256 nullable, language, formats_json, chunk_size_bytes, total_chunks, created_at, updated_at, expires_at, job_id nullable UNIQUE, finalize_owner nullable, finalize_lease_expires_at nullable, create_idempotency_key nullable UNIQUE, create_request_hash nullable, error_code nullable.
+upload_parts: (upload_id, idx) composite PK, bytes, sha256, relative_path, stored_at; FK to upload_sessions ON DELETE CASCADE.
+Index status/expiresAt, create-idempotency key. Use relative paths or deterministic opaque IDs, never arbitrary filename paths.
+
+Transactional invariants:
+- Persist session metadata before returning 201.
+- Part accepted only while session uploading and not expired.
+- Double PUT for same index: identical digest and size => no-op; differing => conflict. Serialize per uploadId + index safely across multiple API workers/processes (DB constraints plus unique staging paths).
+- Concurrency of completes: transactionally transition uploading -> finalizing with lease/owner. Exactly one job is assigned. Other requests return existing job or conflict while finalization is active.
+- Crash after filesystem move but before DB job transaction: recovery must reconcile assembled artifact and resume exactly-once job creation. Design explicit state machine for this window. Prefer a deterministic session-derived final path, finalizer lease, and single DB transaction that inserts jobs + sets upload session completed. Reuse existing job creation function after verifying it can participate in same transaction.
+- Abort cannot race with finalization and remove a job source.
+- On API restart, pre-existing validated chunks remain available and can be resumed. Reconcile parts recorded in DB but missing on disk and orphan files on disk at recovery/cleanup. Never silently claim missing bytes exist.
+- Only one finalization lease active per upload; recover expired leases.
+- Idempotency-Key on creation: same metadata => reuse session, different metadata => 409; hash canonicalized relevant metadata/options. No personal identifiers in IDs.
+
+Avoid holding SQLite write transaction while streaming any chunk or assembling giant media; DB transactions short. Use controlled temporary file naming and atomic rename on same filesystem.

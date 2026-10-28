@@ -8,7 +8,9 @@ import type { Config } from '../../shared/config.js';
 import { AppError } from '../../shared/errors.js';
 import type { TranscriptionProvider } from '../../shared/providers/interface.js';
 import type { JobRepository } from '../../shared/queue/repository.js';
-import { outputFormats, type Job, type OutputFormat } from '../../shared/queue/types.js';
+import { normalizeFilename, parseFormats, parseLanguage } from '../../shared/queue/options.js';
+import type { Job, OutputFormat } from '../../shared/queue/types.js';
+import type { UploadRepository } from '../../shared/uploads/repository.js';
 import { moveUploadIntoPlace, removePath, streamUploadToTemp } from '../../shared/storage/files.js';
 import { contentDisposition, resolveInside, safeDownloadBaseName, sourceRelativePath } from '../../shared/storage/paths.js';
 import {
@@ -23,36 +25,6 @@ import {
   systemStatusSchema,
 } from '../schemas.js';
 import { jobDetail, jobSummary } from '../presentation.js';
-
-const supportedLanguages = new Set([
-  'auto', 'af', 'am', 'ar', 'as', 'az', 'ba', 'be', 'bg', 'bn', 'bo', 'br', 'bs', 'ca', 'cs', 'cy', 'da',
-  'de', 'el', 'en', 'es', 'et', 'eu', 'fa', 'fi', 'fo', 'fr', 'gl', 'gu', 'ha', 'haw', 'he', 'hi', 'hr',
-  'ht', 'hu', 'hy', 'id', 'is', 'it', 'ja', 'jw', 'ka', 'kk', 'km', 'kn', 'ko', 'la', 'lb', 'ln', 'lo',
-  'lt', 'lv', 'mg', 'mi', 'mk', 'ml', 'mn', 'mr', 'ms', 'mt', 'my', 'ne', 'nl', 'nn', 'no', 'oc', 'pa',
-  'pl', 'ps', 'pt', 'ro', 'ru', 'sa', 'sd', 'si', 'sk', 'sl', 'sn', 'so', 'sq', 'sr', 'su', 'sv', 'sw',
-  'ta', 'te', 'tg', 'th', 'tk', 'tl', 'tr', 'tt', 'uk', 'ur', 'uz', 'vi', 'yi', 'yo', 'zh',
-]);
-const canonicalFormats = new Map(outputFormats.map((format, index) => [format, index]));
-
-function parseFormats(value: string | undefined): OutputFormat[] {
-  if (value === undefined || value === '') return ['txt', 'srt', 'json'];
-  const parts = value.split(',').map((item) => item.trim());
-  if (parts.length === 0 || parts.some((item) => !canonicalFormats.has(item as OutputFormat)) || new Set(parts).size !== parts.length) {
-    throw new AppError('VALIDATION_FAILED', 'Formats must be a unique comma-separated subset of txt,srt,vtt,json.', 422);
-  }
-  return (parts as OutputFormat[]).sort((a, b) => (canonicalFormats.get(a) ?? 0) - (canonicalFormats.get(b) ?? 0));
-}
-
-function parseLanguage(value: string | undefined): string {
-  const language = (value ?? 'auto').toLowerCase();
-  if (!supportedLanguages.has(language)) throw new AppError('LANGUAGE_UNSUPPORTED', 'Language is not supported.', 422);
-  return language;
-}
-
-function normalizeFilename(value: string): string {
-  const filename = path.basename(value.replaceAll('\\', '/')).replace(/[\p{Cc}]/gu, '_').slice(0, 255);
-  return filename || 'upload';
-}
 
 function requestHash(fileHash: string, language: string, formats: OutputFormat[]): string {
   return createHash('sha256').update(JSON.stringify({ fileHash, language, formats })).digest('hex');
@@ -82,8 +54,9 @@ export async function jobRoutes(app: FastifyInstance, options: {
   config: Config;
   repository: JobRepository;
   provider: TranscriptionProvider;
+  uploadRepository: UploadRepository;
 }): Promise<void> {
-  const { config, repository, provider } = options;
+  const { config, repository, provider, uploadRepository } = options;
 
   app.post('/api/v1/jobs', {
     schema: {
@@ -277,7 +250,7 @@ export async function jobRoutes(app: FastifyInstance, options: {
     const [reachable, counts, worker] = await Promise.all([
       provider.health(), Promise.resolve(repository.counts()), Promise.resolve(repository.getWorkerFreshness()),
     ]);
-    return { provider: { reachable, model: config.defaultModel }, jobs: counts, worker };
+    return { provider: { reachable, model: config.defaultModel }, jobs: counts, worker, uploads: uploadRepository.metrics() };
   });
 }
 

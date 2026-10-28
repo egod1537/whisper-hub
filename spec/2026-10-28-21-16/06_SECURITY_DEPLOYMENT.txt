@@ -1,0 +1,14 @@
+MILESTONE 06 — MAC MINI / CLOUDFLARE / OPERATIONS
+Existing Docker Compose API + worker and macOS native whisper.cpp remain. New upload staging must live in persistent shared data bind mount; avoid container ephemeral storage. Add separate finalizer service or bounded finalizer loop where necessary; enforce one or safely coordinated multiple finalizer(s) with DB leases. Do not assume multiple Node processes share in-memory locks.
+
+Cloudflare Free/Pro upload limit: 100MB per proxied request (plan dependent). Chunks 20MiB stay below per-request cap. Cloudflare also imposes request/response timeouts and other protections. This implementation is intended for proxied Cloudflare Tunnel/HTTP reverse proxy; never require disabling proxy or exposing unauthenticated origin as the workaround.
+
+Bearer authorization for every new upload endpoint; keep CORS explicit, avoid XSS in filenames. Limit simultaneous sessions, per-file max (2GiB), total staged bytes and disk free headroom. Return 429 or 507 on resource pressure. Per-chunk sizes bounded. Rate limit session creation and chunk requests separately; existing IP global rate limit may need increase to avoid blocking legitimate 103 sequential requests — keep security effective. API key query strings prohibited. Use TLS outside localhost; no auth token logging.
+
+Cleanup and observability:
+- Expire incomplete uploads older than 24h; cleanup also removes orphan .partial files, unreferenced parts and stale finalizer artifacts safely.
+- Document behavior for provider downtime: upload completion succeeds/queues once media valid even if whisper.cpp is unavailable; worker retries under existing policy.
+- Add status metrics: current active upload sessions, staged bytes, finalizing count, queue counts; no sensitive names/paths.
+- Disk exhaustion fallback clear and recoverable. Stop cleanup from removing an actively finalizing session or queued job source.
+- Document env vars MAX_RESUMABLE_UPLOAD_BYTES, UPLOAD_CHUNK_SIZE_BYTES, UPLOAD_SESSION_TTL_HOURS, UPLOAD_MAX_ACTIVE_SESSIONS, UPLOAD_MAX_STAGED_BYTES, UPLOAD_MAX_INFLIGHT_CHUNKS, UPLOAD_FINALIZER_LEASE_SECONDS; validate defaults and compatibility with current config.
+- Explain effects of Cloudflare WAF/rate limits and proxy timeouts. Verify end-to-end with external access, not just localhost.

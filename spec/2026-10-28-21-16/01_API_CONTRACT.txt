@@ -1,0 +1,20 @@
+MILESTONE 01 — RESUMABLE UPLOAD API CONTRACT (v1)
+Use current /api/v1 prefix, auth guard, requestId, error shape and OpenAPI generator; validate payload with repository's existing schemas. All endpoints require Bearer API key.
+
+POST /api/v1/uploads
+JSON body: { "filename":"lecture.mp4", "sizeBytes":524288000, "sha256":"optional-lowercase-64-hex", "language":"ko", "formats":["txt","srt","json"] }
+Validate filename for display only; size >0 and <= MAX_RESUMABLE_UPLOAD_BYTES; language and formats with EXACT existing job rules. Optionally accept client mimeType for display, not trust. Reject unknown options. JSON response 201 {"uploadId":"opaque-uuid", "chunkSizeBytes":20971520, "totalChunks":25, "expiresAt":"ISO8601", "status":"uploading"}. On request retries, support Idempotency-Key (see database spec) to avoid orphan sessions.
+
+PUT /api/v1/uploads/:uploadId/parts/:index
+Binary application/octet-stream body, integer 0-based index, bounded 0..totalChunks-1. Must supply Content-Length (411 if absent) and header X-Chunk-SHA256 (lowercase 64 hex); compare streaming-calculated digest. Expected length = chunkSizeBytes except final remainder, which MUST have exact length. Max one chunk per request; body must never exceed configured chunk size. Reject Content-Encoding other than identity. Response 201 {"index":N,"status":"stored"} or 200 if exact same chunk already saved. Same index with different content/length => 409 CHUNK_CONFLICT. Invalid length => 422; digest mismatch => 422; expired => 410; in-progress/finalizing conflict => 409. Implement atomic write: per-session temporary part file -> fsync where feasible -> rename to canonical part; persist validated chunk record after atomic rename. Make idempotency safe across crash.
+
+GET /api/v1/uploads/:uploadId
+200 {"uploadId":"...","status":"uploading|finalizing|completed|expired|aborted", "sizeBytes":...,"chunkSizeBytes":...,"totalChunks":...,"receivedParts":[0,1,4],"receivedBytes":...,"expiresAt":"...","jobId":null|string}. No filesystem paths. If many chunks, response could grow; cap maximum chunk count and make it compatible with 2GiB (<=103 parts at 20MiB). Distinguish expired/missing consistently.
+
+POST /api/v1/uploads/:uploadId/complete
+No body. Requires complete validated part set. 202 {"uploadId":"...","status":"completed","jobId":"...","jobUrl":"/api/v1/jobs/..."}; repeated complete returns same job (200 or 202 documented consistently). If chunks missing, 409 INCOMPLETE_UPLOAD with missing part indices (capped). If concurrent complete requests, one wins; other must not create a duplicate. If final checksum supplied, compare full reconstructed digest before creating job; mismatch => 422 FILE_HASH_MISMATCH and do NOT queue. Assembling may take nontrivial time; ensure the route cannot exceed Cloudflare request timeout (see milestone 04 for bounded/finalize-in-worker option).
+
+DELETE /api/v1/uploads/:uploadId
+Cancel incomplete session, return 204, idempotent for already-aborted. If finalized, return 409 and instruct client to use existing job cancellation. Cleanup asynchronously or with bounded work, never delete an active job's media.
+
+Keep POST /api/v1/jobs single-request upload unchanged for <= existing cap. Existing GET /jobs, job status/result endpoints continue to work. The frontend should choose multipart endpoint for large files, or consistently use resumable upload for all supported sizes. Ensure schema and OpenAPI reflect reality. Use stable machine-readable error codes and avoid sensitive internal error messages.

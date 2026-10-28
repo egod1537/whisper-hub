@@ -1,21 +1,27 @@
 # Whisper Hub
 
-Whisper Hub is a private, backend-only transcription queue for one Apple Silicon Mac. Clients upload audio or video to a Fastify API, a durable SQLite FIFO queue hands one job at a time to a worker, and the worker calls a native macOS `whisper.cpp` server. Results are stored as TXT, SRT, VTT, or JSON.
+Whisper Hub is a private transcription queue for one Apple Silicon Mac. A small React and Blueprint interface submits audio or video through the Fastify API, a durable SQLite FIFO queue hands one job at a time to a worker, and the worker calls a native macOS `whisper.cpp` server. Results are stored as TXT, SRT, VTT, or JSON.
 
 **Metal inference does not run inside Docker.** Docker Desktop's generic Linux containers do not receive macOS Metal GPU passthrough. The API and worker are containers; `whisper-server` runs natively on the Mac and the worker reaches it through `host.docker.internal`.
 
 ## Architecture
 
 ```text
-client -> 127.0.0.1:3000 API -> /data/whisper-hub.sqlite + uploads
-                                      |
-                                 Docker worker (1 job)
-                                      |
-                         host.docker.internal:8080
-                                      |
-                       native macOS whisper-server (Metal)
-                                      |
-                               /data/results
+browser -> 127.0.0.1:4173 frontend (Nginx)
+                    | same-origin /api and /health proxy
+                    v
+             Docker API -> /data/whisper-hub.sqlite + upload parts
+                                |                 |
+                  upload finalizer          Docker worker (1 job)
+                  (stream assembly)               |
+                                |                 |
+                                +------ job source+
+                                |
+                   host.docker.internal:8080
+                                |
+                 native macOS whisper-server (Metal)
+                                |
+                         /data/results
 ```
 
 The API never runs inference or waits for a transcript. It returns `202`, and the independent worker owns media validation, conversion, provider calls, retries, and output publication. SQLite, uploads, and results live in the local `./data` bind mount; do not put this database on NFS/SMB or share it between multiple hosts.
@@ -65,7 +71,11 @@ The native setup uses the pinned official `whisper.cpp` tag `v1.9.5`, enables `G
    docker compose up -d
    docker compose ps
    curl --fail http://127.0.0.1:3000/health/ready
+   curl --fail http://127.0.0.1:4173/healthz
+   curl --fail http://127.0.0.1:4173/health/ready
    ```
+
+   Open <http://127.0.0.1:4173>, choose **API 키 설정**, and enter the same private key stored in `.env`. The key stays only in the current browser tab's memory: it is not written to local storage, cookies, URLs, logs, or the frontend bundle, and must be entered again after a refresh. The UI uses only same-origin `/api` and `/health` requests through Nginx.
 
    Verify the host route from the worker network if provider connectivity fails:
 
@@ -98,25 +108,40 @@ The native setup uses the pinned official `whisper.cpp` tag `v1.9.5`, enables `G
 Logs and shutdown:
 
 ```sh
-docker compose logs -f api worker
-docker compose stop api worker
+docker compose logs -f api upload-finalizer worker
+docker compose stop api upload-finalizer worker
 docker compose down
 ```
 
 `compose down` does not remove `./data`. Never add `-v` or delete `./data` unless a deliberate reset is intended.
+
+### Remote browser access through SSH
+
+The frontend and API bind to loopback by default. From Windows or another trusted client, forward the frontend port instead of exposing it to the LAN:
+
+```sh
+ssh -L 4173:127.0.0.1:4173 yang@macmini
+```
+
+Then open <http://127.0.0.1:4173> on the client. Keep the terminal session open. Public exposure requires a separately reviewed authenticated TLS tunnel or reverse proxy; the shared API key is intended for one private operator, not public multi-user authorization.
 
 ## API behavior
 
 All `/api/v1` routes and `/docs` require `Authorization: Bearer <API_KEY>`. Only `/health/live` and `/health/ready` are public and minimal. The generated contract is [backend/openapi.json](backend/openapi.json).
 
 - `POST /api/v1/jobs`: streaming multipart upload; fields are `file`, optional `language`, and optional comma-separated `formats`. `prompt` is rejected in the MVP.
+- `POST /api/v1/uploads`: creates an idempotent resumable session. `PUT /uploads/:uploadId/parts/:index` accepts exact, SHA-256-protected binary chunks; `GET` is the authoritative resume state.
+- `POST /api/v1/uploads/:uploadId/complete`: changes the session to `finalizing` and returns `202`. The separate finalizer streams parts into one job source, then `GET /uploads/:uploadId` changes to `completed` with the one queue job ID.
+- `DELETE /api/v1/uploads/:uploadId`: aborts an incomplete session. A finalizing or completed session must be handled through its job instead.
 - `GET /api/v1/jobs` and `GET /api/v1/jobs/:id`: cursor-based list and job state. Progress is a phase, never a fabricated percentage.
 - `DELETE /api/v1/jobs/:id`: queued jobs cancel immediately; processing jobs set a cooperative cancellation flag. Provider and ffmpeg work are aborted where feasible, but cancellation can take time.
 - `POST /api/v1/jobs/:id/retry`: failed jobs only. A manual retry keeps the job ID and attempt audit history, resets the automatic attempt counter/budget to `JOB_MAX_ATTEMPTS`, and is limited to five manual retries.
 - `GET /api/v1/jobs/:id/results[/format]`: completed results only, streamed as attachments without exposing filesystem paths.
-- `GET /api/v1/system/status`: authenticated provider reachability, queue counts, and worker heartbeat freshness.
+- `GET /api/v1/system/status`: authenticated provider reachability, queue counts, worker heartbeat freshness, active upload sessions, staged bytes, and finalizing count.
 
-An `Idempotency-Key` is 1–128 visible ASCII characters. Reusing it with identical bytes and options returns the existing job with `200`; different content or options returns `409`. Uploads are capped at 250 MiB by default. Worker-side `ffprobe` validates the actual media and the two-hour duration limit.
+An `Idempotency-Key` is 1–128 visible ASCII characters. Reusing it with identical content/options returns the existing job or session; different metadata/options returns `409`. The legacy single request is capped at 250 MiB. Resumable sessions default to 2 GiB total with 20 MiB requests and at most three concurrent browser requests. Worker-side `ffprobe` still validates the assembled media and independent two-hour duration limit.
+
+The browser uses resumable uploads for every file. It measures progress only after the server accepts a complete chunk, retries only network/429/5xx failures up to three times with backoff, and polls the asynchronous assembly phase before announcing a queued job. Refreshing discards the API key but preserves non-secret resume metadata (session ID, original filename/size/mtime, language, formats) in `localStorage`; the operator must re-enter the API key and reselect the same local file. File bytes and credentials are never persisted by the UI.
 
 The FIFO order is `(created_at, id)` among currently eligible queued jobs. A retry waiting for backoff does not block later eligible jobs. Queue position is best-effort, 1-based, and can change; there is no ETA.
 
@@ -130,7 +155,7 @@ Input is converted with fixed `ffmpeg` arguments to mono 16 kHz signed 16-bit PC
 
 ## Retention, cleanup, and privacy
 
-Defaults are completed job retention 7 days, failed/canceled retention 3 days, and completed/canceled source retention 1 day. Failed source files remain until failed-job expiry so an explicit retry remains possible. Active queued or processing jobs are never deleted.
+Defaults are completed job retention 7 days, failed/canceled retention 3 days, completed/canceled source retention 1 day, and incomplete upload expiry 24 hours. Cleanup expires incomplete sessions, removes terminal-session staging and stale `.partial` files, and never removes a finalizing session or queued job source. Failed source files remain until failed-job expiry so an explicit retry remains possible. Active queued or processing jobs are never deleted.
 
 Preview cleanup (no deletion):
 
@@ -150,7 +175,7 @@ Enable the opt-in daily cleanup service:
 docker compose --profile retention up -d cleanup
 ```
 
-Cleanup permanently deletes expired rows and their job directories. Back up first if recovery could be required. Stop the cleanup profile with `docker compose --profile retention stop cleanup`.
+Cleanup permanently deletes expired job rows and media, removes terminal upload staging, and retains expired/aborted upload status briefly before purging old session rows. Back up first if recovery could be required. Stop the cleanup profile with `docker compose --profile retention stop cleanup`.
 
 ## Backup, restore, reset, and upgrade
 
@@ -162,14 +187,14 @@ docker compose run --rm -v "$(pwd)/backups:/backup" worker \
   node dist/cli/backup.js /backup/whisper-hub.sqlite
 ```
 
-For a backup consistent with media files, stop API and worker, run the database backup, then copy `data/uploads` and `data/results` while they remain stopped:
+For a backup consistent with media files, stop API, upload finalizer, and worker, run the database backup, then copy `data/uploads` and `data/results` while they remain stopped:
 
 ```sh
-docker compose stop api worker cleanup
+docker compose stop api upload-finalizer worker cleanup
 docker compose run --rm -v "$(pwd)/backups:/backup" worker \
   node dist/cli/backup.js /backup/whisper-hub.sqlite
 rsync -a data/uploads data/results backups/
-docker compose up -d api worker
+docker compose up -d api upload-finalizer worker
 ```
 
 To restore, stop all services, move the current `data` directory aside, create a new `data`, copy the backed-up database to `data/whisper-hub.sqlite` plus the media directories, then start Compose. Moving the old directory aside makes rollback possible.
@@ -186,19 +211,22 @@ docker compose up -d
 For an application upgrade:
 
 ```sh
-git pull --ff-only
+git switch main
+git pull --ff-only origin main
 docker compose build
 docker compose up -d
 ```
 
-The one-shot `migrate` service completes before API and worker startup. To update `whisper.cpp`, review the official release and server contract, update the pinned tag and model checksum in `scripts/setup-macos-whisper.sh`, rerun tests and the native E2E, then rebuild on the host. Do not silently track `master`.
+`origin/main` is the production deployment source of truth. Do not build an operational image from a dirty worktree or another branch.
+
+The one-shot `migrate` service applies forward-only migrations before API, upload finalizer, and worker startup. Migration `0002_resumable_uploads.sql` adds persistent sessions, validated parts, and cross-process part claims; no reset is required. To update `whisper.cpp`, review the official release and server contract, update the pinned tag and model checksum in `scripts/setup-macos-whisper.sh`, rerun tests and the native E2E, then rebuild on the host. Do not silently track `master`.
 
 ## API key rotation and network exposure
 
-Generate a new key, replace `API_KEY` in `.env`, then recreate API and worker:
+Generate a new key, replace `API_KEY` in `.env`, then recreate authenticated services:
 
 ```sh
-docker compose up -d --force-recreate api worker
+docker compose up -d --force-recreate api upload-finalizer worker
 ```
 
 Existing clients immediately lose access. The key is timing-safe compared, redacted from structured logs, and required at startup unless explicit `TEST_MODE=true` is used by tests.
@@ -218,7 +246,40 @@ pnpm build
 pnpm openapi
 ```
 
-Linux CI runs unit, API, queue/recovery, and worker integration tests with a fake provider and ffmpeg. It does **not** verify macOS Metal. The real provider test is opt-in and requires an actual Korean WAV fixture:
+Run the API and frontend separately during UI development:
+
+```sh
+pnpm --filter whisper-hub-backend dev:api
+pnpm dev:frontend
+```
+
+Vite listens only on `127.0.0.1:4173` and proxies `/api` and `/health` to `http://127.0.0.1:3000`. If the local API uses a different port, set the development-only proxy target; it is not included in the browser bundle:
+
+```sh
+VITE_PROXY_TARGET=http://127.0.0.1:33000 pnpm dev:frontend
+```
+
+Frontend production assets are built with `pnpm build:frontend`. `docker compose up -d` builds and starts the frontend, API, upload finalizer, and worker. Nginx forwards bearer authorization and disables request buffering. The 251 MiB Nginx ceiling retains the legacy multipart endpoint while resumable requests remain at 20 MiB. It never proxies the native provider port.
+
+### Resumable upload limits and Cloudflare
+
+The validated defaults are:
+
+| Variable | Default | Purpose |
+| --- | ---: | --- |
+| `MAX_RESUMABLE_UPLOAD_BYTES` | 2147483648 | Aggregate file ceiling (2 GiB) |
+| `UPLOAD_CHUNK_SIZE_BYTES` | 20971520 | Exact non-final chunk size; capped at 20 MiB |
+| `UPLOAD_SESSION_TTL_HOURS` | 24 | Incomplete session lifetime |
+| `UPLOAD_MAX_ACTIVE_SESSIONS` | 20 | Uploading/finalizing session cap |
+| `UPLOAD_MAX_STAGED_BYTES` | 4294967296 | Total active validated-part quota |
+| `UPLOAD_MAX_INFLIGHT_CHUNKS` | 6 | API-wide active stream cap; each session is capped at three |
+| `UPLOAD_FINALIZER_LEASE_SECONDS` | 900 | Recoverable assembly lease |
+
+Cloudflare's proxied per-request upload ceiling is plan-dependent; its current connection-limit documentation lists 100 MB for Free and Pro. The 20 MiB chunk default stays comfortably below that request limit, but WAF rules and rate limits must also allow the authenticated chunk route. Do not solve proxy failures by exposing the origin or disabling authentication. Completion is asynchronous specifically so a 2 GiB local assembly does not hold an edge request open. See [Cloudflare connection limits](https://developers.cloudflare.com/fundamentals/reference/connection-limits/).
+
+Provider downtime does not prevent a fully assembled upload from becoming a queued job. The existing worker retry policy handles provider reachability. `507 INSUFFICIENT_STORAGE` means the staged-byte quota or filesystem capacity must be cleared; the client retains resume metadata and can retry after the operator runs cleanup or adds capacity.
+
+Linux CI runs frontend unit/component tests plus backend unit, API, queue/recovery, and worker integration tests with a fake provider and ffmpeg. It does **not** verify macOS Metal or the complete manual browser workflow. The real provider test is opt-in and requires an actual Korean WAV fixture:
 
 ```sh
 RUN_NATIVE_WHISPER_E2E=1 \
@@ -231,4 +292,4 @@ Before accepting a Mac mini deployment, also queue three files and observe one p
 
 ## Scope
 
-This is a private single-host MVP. It intentionally has no users/tenants, per-user quotas, public sharing, diarization, billing, resumable uploads, or multi-host SQLite writers. For multi-host or public scale, move to a database/object-store/queue architecture and add identity, TLS, audit, and stronger distributed rate limits.
+This is a private single-host MVP. The UI intentionally has one page and no accounts, users/tenants, waveform, browser recording, subtitle editor, public sharing, diarization, billing, or multi-host SQLite writers. Resumable uploads coordinate multiple API processes through the one local SQLite database, but this is not a multi-host object-storage design. For public or multi-host scale, move to a database/object-store/queue architecture and add identity, TLS, audit, and stronger distributed rate limits.

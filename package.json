@@ -12,10 +12,13 @@
     ]
   },
   "scripts": {
-    "build": "pnpm --filter whisper-hub-backend build",
-    "lint": "pnpm --filter whisper-hub-backend lint",
-    "typecheck": "pnpm --filter whisper-hub-backend typecheck",
-    "test": "pnpm --filter whisper-hub-backend test",
+    "build": "pnpm --filter whisper-hub-backend build && pnpm --filter whisper-hub-frontend build",
+    "build:frontend": "pnpm --filter whisper-hub-frontend build",
+    "dev:frontend": "pnpm --filter whisper-hub-frontend dev",
+    "lint": "pnpm --filter whisper-hub-backend lint && pnpm --filter whisper-hub-frontend lint",
+    "test": "pnpm --filter whisper-hub-backend test && pnpm --filter whisper-hub-frontend test",
+    "test:frontend": "pnpm --filter whisper-hub-frontend test",
+    "typecheck": "pnpm --filter whisper-hub-backend typecheck && pnpm --filter whisper-hub-frontend typecheck",
     "openapi": "pnpm --filter whisper-hub-backend openapi"
   }
 }

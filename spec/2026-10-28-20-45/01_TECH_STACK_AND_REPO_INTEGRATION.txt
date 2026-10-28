@@ -1,0 +1,35 @@
+PHASE 01 - FRONTEND FOUNDATION
+
+READ FIRST
+- Existing package.json / pnpm-workspace.yaml; confirm versions and workspace wiring.
+- README.md, backend/openapi.json, backend job routes, compose.yaml and .env.example.
+- Follow current backend endpoint paths and request/response types rather than assuming example payloads.
+
+STACK
+- frontend/: React 19 + TypeScript strict + Vite + @blueprintjs/core v6.x + @blueprintjs/icons matching v6.x.
+- Prefer stable Blueprint v6.16.0 or higher for React 19 peer compatibility; inspect current releases / lockfile and pin tested compatible versions. Avoid deprecated legacy Popover and Overlay; no requirement to use either.
+- Minimal custom CSS. Import normalize and Blueprint CSS according to official package docs and confirm bundling.
+- Use fetch with typed, runtime-defensive JSON parsing, AbortController. No redux, state machines, or query framework required; polling hooks are enough.
+- Existing backend remains TS/Fastify. Frontend is a separate workspace package named whisper-hub-frontend.
+
+REPOSITORY SHAPE
+frontend/index.html
+frontend/package.json
+frontend/tsconfig.json
+frontend/vite.config.ts
+frontend/src/main.tsx
+frontend/src/App.tsx
+frontend/src/api/{client,types}.ts
+frontend/src/components/{UploadPanel,JobsList,TranscriptPanel}.tsx
+frontend/src/hooks/useJobs.ts
+frontend/src/styles.css
+frontend/src/__tests__/... (as appropriate)
+
+WORKSPACE
+- Add frontend package to existing pnpm workspace. Root scripts may add dev:frontend, build:frontend, test:frontend but preserve existing backend script behavior.
+- Ensure `pnpm install --frozen-lockfile` works after updating lockfile.
+- Dark mode optional: choose LIGHT mode as baseline for legibility. Do not implement theme toggle in MVP unless trivial.
+- Desktop max content width ~1000px; responsive tablet/mobile with single column and no horizontal overflow.
+
+DELIVERABLE
+Frontend builds standalone, renders empty state, does not call made-up backend endpoints. Type checks and imports succeed.

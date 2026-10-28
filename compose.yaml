@@ -7,6 +7,13 @@ x-common-environment: &common-environment
   DB_PATH: /data/whisper-hub.sqlite
   WHISPER_BASE_URL: ${WHISPER_BASE_URL:-http://host.docker.internal:8080}
   MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-262144000}
+  MAX_RESUMABLE_UPLOAD_BYTES: ${MAX_RESUMABLE_UPLOAD_BYTES:-2147483648}
+  UPLOAD_CHUNK_SIZE_BYTES: ${UPLOAD_CHUNK_SIZE_BYTES:-20971520}
+  UPLOAD_SESSION_TTL_HOURS: ${UPLOAD_SESSION_TTL_HOURS:-24}
+  UPLOAD_MAX_ACTIVE_SESSIONS: ${UPLOAD_MAX_ACTIVE_SESSIONS:-20}
+  UPLOAD_MAX_STAGED_BYTES: ${UPLOAD_MAX_STAGED_BYTES:-4294967296}
+  UPLOAD_MAX_INFLIGHT_CHUNKS: ${UPLOAD_MAX_INFLIGHT_CHUNKS:-6}
+  UPLOAD_FINALIZER_LEASE_SECONDS: ${UPLOAD_FINALIZER_LEASE_SECONDS:-900}
   MAX_DURATION_SECONDS: ${MAX_DURATION_SECONDS:-7200}
   WORKER_POLL_MS: ${WORKER_POLL_MS:-1000}
   WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
@@ -61,6 +68,32 @@ services:
       migrate:
         condition: service_completed_successfully
     stop_grace_period: 30s
+
+  upload-finalizer:
+    <<: *common
+    command: ["node", "dist/finalizer/main.js"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    stop_grace_period: 30s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    image: whisper-hub-frontend:local
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-4173}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   cleanup:
     <<: *common

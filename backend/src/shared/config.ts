@@ -17,6 +17,13 @@ const configSchema = z
     WHISPER_BASE_URL: z.string().url().default('http://host.docker.internal:8080'),
     API_KEY: z.string().min(16).optional(),
     MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(262_144_000),
+    MAX_RESUMABLE_UPLOAD_BYTES: z.coerce.number().int().positive().max(2_147_483_648).default(2_147_483_648),
+    UPLOAD_CHUNK_SIZE_BYTES: z.coerce.number().int().min(1_048_576).max(20_971_520).default(20_971_520),
+    UPLOAD_SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(24),
+    UPLOAD_MAX_ACTIVE_SESSIONS: z.coerce.number().int().min(1).default(20),
+    UPLOAD_MAX_STAGED_BYTES: z.coerce.number().int().positive().default(4_294_967_296),
+    UPLOAD_MAX_INFLIGHT_CHUNKS: z.coerce.number().int().min(1).max(64).default(6),
+    UPLOAD_FINALIZER_LEASE_SECONDS: z.coerce.number().int().min(60).default(900),
     MAX_DURATION_SECONDS: z.coerce.number().positive().default(7_200),
     MAX_CONVERSION_SECONDS: z.coerce.number().int().positive().default(7_500),
     MAX_WAV_BYTES: z.coerce.number().int().positive().default(1_500_000_000),
@@ -39,6 +46,9 @@ const configSchema = z
     if (!value.TEST_MODE && !value.API_KEY) {
       ctx.addIssue({ code: 'custom', path: ['API_KEY'], message: 'API_KEY is required unless TEST_MODE=true' });
     }
+    if (Math.ceil(value.MAX_RESUMABLE_UPLOAD_BYTES / value.UPLOAD_CHUNK_SIZE_BYTES) > 10_000) {
+      ctx.addIssue({ code: 'custom', path: ['UPLOAD_CHUNK_SIZE_BYTES'], message: 'Resumable uploads may not exceed 10,000 chunks' });
+    }
   });
 
 export type Config = Readonly<{
@@ -51,6 +61,13 @@ export type Config = Readonly<{
   whisperBaseUrl: string;
   apiKey?: string;
   maxUploadBytes: number;
+  maxResumableUploadBytes: number;
+  uploadChunkSizeBytes: number;
+  uploadSessionTtlHours: number;
+  uploadMaxActiveSessions: number;
+  uploadMaxStagedBytes: number;
+  uploadMaxInflightChunks: number;
+  uploadFinalizerLeaseSeconds: number;
   maxDurationSeconds: number;
   maxConversionSeconds: number;
   maxWavBytes: number;
@@ -84,6 +101,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     whisperBaseUrl: parsed.WHISPER_BASE_URL.replace(/\/$/, ''),
     ...optionalApiKey,
     maxUploadBytes: parsed.MAX_UPLOAD_BYTES,
+    maxResumableUploadBytes: parsed.MAX_RESUMABLE_UPLOAD_BYTES,
+    uploadChunkSizeBytes: parsed.UPLOAD_CHUNK_SIZE_BYTES,
+    uploadSessionTtlHours: parsed.UPLOAD_SESSION_TTL_HOURS,
+    uploadMaxActiveSessions: parsed.UPLOAD_MAX_ACTIVE_SESSIONS,
+    uploadMaxStagedBytes: parsed.UPLOAD_MAX_STAGED_BYTES,
+    uploadMaxInflightChunks: parsed.UPLOAD_MAX_INFLIGHT_CHUNKS,
+    uploadFinalizerLeaseSeconds: parsed.UPLOAD_FINALIZER_LEASE_SECONDS,
     maxDurationSeconds: parsed.MAX_DURATION_SECONDS,
     maxConversionSeconds: parsed.MAX_CONVERSION_SECONDS,
     maxWavBytes: parsed.MAX_WAV_BYTES,

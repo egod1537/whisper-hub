@@ -14,7 +14,7 @@ export interface StoredUpload {
 
 export function ensureStorage(dataDir: string): void {
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  for (const child of ['uploads', 'results', '.tmp']) {
+  for (const child of ['uploads', 'uploads/.sessions', 'results', '.tmp']) {
     fs.mkdirSync(resolveInside(dataDir, child), { recursive: true, mode: 0o700 });
   }
 }

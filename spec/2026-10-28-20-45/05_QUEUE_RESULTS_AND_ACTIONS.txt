@@ -1,0 +1,25 @@
+PHASE 05 - JOB LIST, ACTIONS, AND TRANSCRIPT
+
+JOB LIST
+- Start with latest 20-30 jobs; if backend offers cursor pagination, provide "더 보기" only when next cursor present.
+- Sort in backend order; do not pretend all jobs are globally FIFO in rendering. Show queue_position if provided; processing phase if available.
+- Status tags for queued / processing / completed / failed / canceled. Duration and attempt only if backend provides.
+- Click row to select and show details/result.
+- Cancel button for queued/processing, with a compact confirmation if processing. Reconcile authoritative status after action.
+- Retry button ONLY for failed; disable action during request; surface backend conflicts or retry limit.
+- Do not show delete for completed unless backend has a real delete operation.
+
+RESULTS
+- Completed job: show TXT preview as plain escaped text. If TXT wasn't requested, do not request nonexistent format: display "미리보기 없음" with available output download buttons.
+- Downloads: request authenticated result using fetch, create Blob URL for local download, revoke URL; filename based on sanitized display name + extension, or Content-Disposition safely parsed if available.
+- Never navigate the browser directly to authenticated result URL if that drops Bearer token.
+- `복사` copies transcript only on user action and indicates result; handle clipboard permissions / fallback.
+- Limit preview rendering to first ~100k characters with note; always allow file download for full content.
+- 409 for unfinished result -> show status, not an exception trace.
+
+EDGE CASES
+- Canceled job may briefly remain processing while worker cooperatively aborts; trust server state.
+- Queue order/position may change due to retry backoff; avoid ETA or countdown.
+- Expired job/results from retention -> show not found/expired and refresh, no infinite retries.
+- Background tab/unmount abort outstanding requests and stop polling.
+- Graceful loading/empty/error UI states for each panel.

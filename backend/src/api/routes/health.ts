@@ -19,7 +19,7 @@ export async function healthRoutes(app: FastifyInstance, options: { db: SqliteDa
             live: z.literal('/health/live'),
             ready: z.literal('/health/ready'),
           }),
-          api: z.object({ jobs: z.literal('/api/v1/jobs') }),
+          api: z.object({ jobs: z.literal('/api/v1/jobs'), uploads: z.literal('/api/v1/uploads') }),
           documentation: z.literal('/docs'),
           authentication: z.literal('Bearer token required for /api/v1 and /docs'),
         }),
@@ -30,7 +30,7 @@ export async function healthRoutes(app: FastifyInstance, options: { db: SqliteDa
     status: 'ok' as const,
     version: '1.0.0' as const,
     health: { live: '/health/live' as const, ready: '/health/ready' as const },
-    api: { jobs: '/api/v1/jobs' as const },
+    api: { jobs: '/api/v1/jobs' as const, uploads: '/api/v1/uploads' as const },
     documentation: '/docs' as const,
     authentication: 'Bearer token required for /api/v1 and /docs' as const,
   }));

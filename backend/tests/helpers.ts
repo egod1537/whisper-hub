@@ -40,11 +40,12 @@ export interface TestContext {
   close(): Promise<void>;
 }
 
-export async function createTestContext(): Promise<TestContext> {
+export async function createTestContext(overrides: NodeJS.ProcessEnv = {}): Promise<TestContext> {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'whisper-hub-test-'));
   const config = loadConfig({
     NODE_ENV: 'test', TEST_MODE: 'true', API_KEY: 'test-api-key-123456', DATA_DIR: directory,
     DB_PATH: path.join(directory, 'db.sqlite'), LOG_LEVEL: 'silent', JOB_LEASE_SECONDS: '60',
+    ...overrides,
   });
   const db = openDatabase(config.dbPath);
   migrate(db);

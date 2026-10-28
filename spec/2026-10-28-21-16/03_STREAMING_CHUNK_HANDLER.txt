@@ -1,0 +1,14 @@
+MILESTONE 03 — FASTIFY STREAMING CHUNK UPLOAD
+Implement PUT handler using Node streams, not Buffer of whole request, no req.body buffering, no body-size bypass. For application/octet-stream use Fastify content-type parser exposing raw request stream with bounded counting and backpressure; verify its behavior with tests. Ensure auth/rate limit hooks run before streaming disk writes.
+
+Write each part to /data/uploads/.sessions/<opaque-id>/parts/<index>.partial.<random> with exclusive creation and restrictive perms. Concurrent requests for same index must coordinate via a lock/transactional claim; do NOT allow both to overwrite canonical file. Calculate SHA-256 incrementally, count bytes and enforce exact expected length + per-request hard cap. On mismatch delete temp and return 422. Rename completed temp to stable path on same filesystem atomically, then commit part metadata. If metadata commit fails, leave recoverable orphan for cleanup/reconciliation. Avoid shell commands to process paths; no symlink traversal.
+
+Security/quality:
+- Reject requests over 20MiB chunk by default, even if aggregate limit is 2GiB.
+- Respect proxy limits including headers and body overhead; binary octet-stream avoids multipart overhead.
+- Reject unknown length/chunked Transfer-Encoding for chunk PUT (Content-Length required) to reduce ambiguity.
+- Bound active chunk PUT streams globally, per session, and optionally per source IP; reject overload with 429/503 and Retry-After.
+- Request abort removes partial temp; disk full returns controlled 507 INSUFFICIENT_STORAGE (or documented 500), no corrupted accepted state.
+- Never trust declared MIME; existing ffprobe validation happens after assembly in worker.
+- Never log raw payload, Authorization, full path or transcript content.
+- Maintain explicit storage usage/quota check; incomplete sessions must not fill disk indefinitely.

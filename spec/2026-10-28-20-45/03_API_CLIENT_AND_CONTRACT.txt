@@ -1,0 +1,34 @@
+PHASE 03 - API CLIENT / WIRE FORMAT
+
+SOURCE OF TRUTH
+Read backend/openapi.json AND actual backend route handlers. API follows /api/v1; all /api/v1 routes are Bearer-key protected; /health/live and /health/ready are public. Confirm exact JSON property names, status enums, accepted format values, pagination response, job details, download headers, CORS policy, body limits. Do not guess JSON structures.
+
+EXPECTED ENDPOINTS TO VERIFY
+POST /api/v1/jobs (multipart/form-data) -> usually 202, or 200 for replay using Idempotency-Key
+GET /api/v1/jobs (pagination)
+GET /api/v1/jobs/:id
+DELETE /api/v1/jobs/:id
+POST /api/v1/jobs/:id/retry
+GET /api/v1/jobs/:id/results/:format or compatible results route
+GET /api/v1/system/status
+GET /health/ready
+
+CLIENT CONTRACT
+- baseURL = same-origin `/api/v1` by default through dev/prod proxy; no hardcoded 127.0.0.1 in browser network requests.
+- Explicit `Authorization: Bearer <key>` on protected calls.
+- Key provided by user in a masked field. Hold only in application memory by default. On refresh, key is requested again. Do NOT put API key into localStorage, URL query, logs, analytics, static bundle, or checked-in `.env`.
+- Do not persist token in service worker or cookies. If user asks to remember key later, design separately.
+- Abort in-flight fetch on unmount/selection change.
+- Typed API errors: 401 invalid key, 413 too large, 415 bad type, 422 invalid options/media, 409 conflict/idempotency or invalid state, 429 rate limit, 5xx unavailable; show readable Korean feedback with no raw stacktrace/provider stderr.
+- For response schemas, normalize backend fields in one adapter. Handle optional phase, queue position, results availability gracefully.
+- Client should not trust raw `download_url` from untrusted origins; use known same-origin endpoint built from encoded opaque job ID and allowed formats.
+
+POLLING
+- Active jobs: GET list/detail every 2-3 seconds while visible, pause/reduce when background tab hidden; never require SSE.
+- Stop high-frequency polling if no jobs active; offer manual refresh.
+- On 401 stop polling and request key.
+- On transient network error exponential backoff max ~20s and preserve data; clean aborts.
+- Do not refresh entire page to update queue.
+
+AUTH/GATE NOTE
+If exposing frontend to other users later, shared API key in browser is not a multi-user authorization solution. MVP is private/single-operator only. Ensure no public distribution of key.

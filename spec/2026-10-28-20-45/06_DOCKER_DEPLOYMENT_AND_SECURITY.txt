@@ -1,0 +1,23 @@
+PHASE 06 - MAC MINI DEPLOYMENT / NETWORK
+
+EXISTING ARCHITECTURE
+Backend API + Worker are Docker containers with SQLite persisted on bind-mounted data. Native macOS whisper-server uses Metal and is reached by worker via host.docker.internal:8080. Do not put Metal inference into a Linux container, do not change worker architecture.
+
+FRONTEND DEPLOYMENT
+- Add production frontend stage: `pnpm --filter whisper-hub-frontend build` produces static assets.
+- Serve static files through small Nginx container or equivalent. Bind frontend host port to 127.0.0.1:4173 by default. Keep existing API binding/security unchanged except internal docker networking needed for proxy.
+- Reverse proxy browser requests to backend container (e.g. `/api/`, `/health/`) by SERVICE name within Compose. Confirm Fastify routes and Host/Proxy behavior. Avoid proxying provider port 8080.
+- Vite dev server proxy routes `/api` and `/health` to localhost backend for development only. Ensure browser uses relative URLs.
+- Choose explicit Compose service `frontend`; make sure its addition does not break current `docker compose up -d` or migrations. Keep all persistent data under existing ./data and never overwrite it.
+- Health check static UI response and API routing; document `curl` tests.
+
+SECURITY
+- Do not bundle API_KEY in frontend build-time env or Nginx environment. User enters key per browser session.
+- No public CORS wildcard, no implicit unauthenticated access to backend. Reverse proxy should forward Authorization headers, restrict upload body to match backend limit + multipart overhead, configure appropriate read/upload timeouts, and send security headers.
+- Frontend default exposure local-only. If accessing from Windows/phone, recommend SSH port-forward (`ssh -L 4173:127.0.0.1:4173 yang@macmini`) or authenticated private tunnel. External exposure/TLS/reverse proxy is separate future work.
+- Avoid `dangerouslySetInnerHTML`; transcripts rendered as text, never HTML.
+- Never add analytics or third-party CDNs that could receive private transcript content.
+- Source and results stay inside backend data mount, not Nginx static directory.
+
+DOCUMENTATION
+Update README with local development, build, compose startup, localhost URL, authenticated UI usage, Windows SSH tunnel option, operational limitations and warning that macOS Metal is not tested by CI.

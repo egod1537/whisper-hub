@@ -1,0 +1,29 @@
+PHASE 07 - TEST, QA AND CODEX HANDOFF
+
+AUTOMATED TESTS
+- API client: bearer auth, response parsing, errors, abort, downloads.
+- Upload: required file, required format, correctly serialized multipart language/formats, no double submit, idempotency behavior.
+- Queue: queued->processing->completed, failed/retry, queued/cancel, processing/cancel pending, polling/backoff and 401.
+- Results: text preview is safely escaped, format-specific authenticated download, long transcript truncation, expired/missing result.
+- Responsive smoke: 360px / 768px / 1440px; all primary actions visible, no sideways scroll, no horizontal clipping.
+- Accessibility: field labels, keyboard navigation, visible focus, feedback via accessible status announcements.
+- Run frontend lint, typecheck, unit tests and build. Existing backend lint/typecheck/tests/build must continue to pass.
+- Compose config valid (`docker compose config`); HTTP proxy same-origin works. Use mock/fake provider ONLY for automated E2E, label it accurately.
+
+MANUAL MAC MINI ACCEPTANCE (DO NOT CLAIM IF NOT RUN)
+1. Start native whisper.cpp Metal server and existing backend Docker services.
+2. Start frontend Docker service, load http://127.0.0.1:4173 in a browser (or SSH tunnel).
+3. Input private API key in browser, choose short Korean or Japanese file and formats TXT,SRT.
+4. Submit => queued => processing => completed, no fabricated percent/ETA.
+5. Preview Korean/Japanese transcript; copy; download and verify UTF-8 files.
+6. Queue 3 files and verify a single worker sequentially handles jobs, UI remains responsive.
+7. Cancel one queued job, retry one failed job, check actions shown only when legal.
+8. Refresh page: key requested again, job list recoverable after key re-entry.
+9. Verify 401, oversized file, provider offline and frontend reload states.
+10. Ensure frontend and API ports aren't accessible from LAN by default.
+
+DONE WHEN
+- UI is operational with real existing backend API, not a static mock.
+- Single simple page, Blueprint components visually consistent, responsive and keyboard accessible.
+- Docker frontend integrated, backend unaffected, tests and README updated.
+- Final Codex report: files changed, actual commands/results, screenshot if feasible, unresolved blockers and untested hardware checks. Commit with meaningful message if instructed.

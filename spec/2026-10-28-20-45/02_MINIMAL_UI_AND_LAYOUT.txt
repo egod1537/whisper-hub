@@ -1,0 +1,30 @@
+PHASE 02 - BLUEPRINT VISUAL DESIGN / ONE-PAGE UI
+
+VISUAL DIRECTION
+Palantir Blueprint inspired data-tool restraint, not a marketing landing page. White/light-gray canvas, subtle dividers, compact typography, clear primary button, restrained accent blue. Prefer actual Blueprint controls: Navbar or simple header, Card, FileInput or native accessible file input, HTMLSelect/Select for language, Checkbox for output formats, Button, Callout, Tag, Spinner, ProgressBar (ONLY for upload bytes), NonIdealState, Toast or inline alerts.
+
+ONE-PAGE LAYOUT
+HEADER: "Whisper Hub" left, small status chip (connected / disconnected) right, API key configure action if required.
+MAIN left/upper card: "새 전사 작업"
+- audio/video file picker, selected filename and size
+- language select: 자동 감지(default), 한국어(ko), 일본어(ja), 영어(en); map exact backend enum if restricted
+- output format checkboxes: TXT(default), SRT, VTT, JSON. At least one mandatory.
+- submit primary: "전사 시작"; disable while uploading; display byte upload progress only if transport accurately supports it; if using fetch with no upload progress, show spinner and "업로드 중" and DO NOT fabricate percentages.
+MAIN right/lower card: "작업 대기열"
+- counts (queued, processing) if obtainable from system/status or actual jobs; no invented numbers
+- compact rows: filename, status tag, language, created time, queue position if provided, actions.
+- states: 대기 중, 처리 중 (phase details if available), 완료, 실패, 취소됨
+- processing indication must be indeterminate; DO NOT display made-up % or ETA.
+BOTTOM or right side for selected completed job: "전사 결과" with plain-text preview, copy and download available formats. Compact scroll container. Avoid automatically loading giant outputs into DOM.
+
+RESPONSIVE
+>= 900px: upload and queue side-by-side or queue ~60% width. < 900px: vertically stacked. At 360px width no overflow; use wrap for actions and long filenames; keyboard and touch targets.
+
+EMPTY / ERROR
+- "아직 등록된 작업이 없습니다" with no unrelated illustration.
+- No key: show compact API key prompt, disable requests until provided.
+- Server down: non-destructive reconnect hint, retain input and visible previous data with stale indicator.
+- Do not introduce sidebar/navigation tabs, KPI cards, charts, sample datasets, or oversized hero.
+
+ACCESSIBILITY
+Associate labels with fields, aria-live for asynchronous state, visible focus, descriptive actions. Avoid relying on color alone. Blueprints controls preferred, but accessible native file input is acceptable.

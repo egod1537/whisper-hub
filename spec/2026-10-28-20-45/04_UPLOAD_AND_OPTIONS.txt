@@ -1,0 +1,20 @@
+PHASE 04 - FILE SUBMISSION
+
+UPLOAD FORM
+- Exactly one file per submission. Native picker supports common audio/video extensions, but do not treat accept= as security. Server validates media.
+- Display filename, size, remove/replace selection.
+- Reject size > MAX_UPLOAD_BYTES when known from app config (default 250 MiB, but backend controls limit). If frontend config is uncertain, communicate backend limit without introducing inconsistent numeric enforcement.
+- Language: auto, ko, ja, en; only those actually accepted by backend. Default auto.
+- Formats: txt default checked; srt/vtt/json optional; at least one selected.
+- No prompt, model, diarization, quality settings, parallel runs, or optional advanced accordion for MVP. Backend model remains configured server-side.
+
+SUBMISSION
+- Construct FormData keys exactly like backend (`file`, `language`, `formats`, where formats is backend's comma-separated format string if confirmed).
+- Include one UUID-based Idempotency-Key per upload attempt, reuse it only for retrying identical request after uncertain network response. New file/options generate a new key. Prevent accidental double-submit.
+- Handle 202 response, optimistic indication only for local submission phase; use returned authoritative job to append list and select it.
+- Show file-upload pending state, API error, and reset file input after success (retain chosen language/formats).
+- When a request fails or times out ambiguously, allow retry with the SAME key and unchanged payload. Never silently create duplicates.
+- Do not claim upload % without actual progress events. If implementing XHR upload progress, ensure auth, timeout, abort and error handling; simpler fetch with spinner is recommended.
+
+ACCEPTANCE
+Successful upload produces a real job ID and appears in queue; invalid file shows server error without a fake job; duplicate clicking does not create two jobs; language/formats transmitted correctly.

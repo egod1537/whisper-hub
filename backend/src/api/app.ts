@@ -11,9 +11,11 @@ import type { SqliteDatabase } from '../shared/db/connection.js';
 import { AppError, safeError } from '../shared/errors.js';
 import type { TranscriptionProvider } from '../shared/providers/interface.js';
 import { JobRepository } from '../shared/queue/repository.js';
+import { UploadRepository } from '../shared/uploads/repository.js';
 import { createAuthHandler } from './auth.js';
 import { healthRoutes } from './routes/health.js';
 import { jobRoutes } from './routes/jobs.js';
+import { uploadRoutes } from './routes/uploads.js';
 
 export async function buildApp(options: { config: Config; db: SqliteDatabase; provider: TranscriptionProvider; logger?: boolean }): Promise<FastifyInstance> {
   const { config, db, provider } = options;
@@ -33,6 +35,7 @@ export async function buildApp(options: { config: Config; db: SqliteDatabase; pr
   await app.register(multipart, {
     limits: { fileSize: config.maxUploadBytes, files: 2, fields: 3, parts: 4, fieldNameSize: 100, fieldSize: 1_024 },
   });
+  app.addContentTypeParser('application/octet-stream', (_request, payload, done) => done(null, payload));
   await app.register(swagger, {
     openapi: {
       info: { title: 'Whisper Hub API', version: '1.0.0' },
@@ -64,6 +67,18 @@ export async function buildApp(options: { config: Config; db: SqliteDatabase; pr
           },
         };
       }
+      const partOperation = openapiObject.paths?.['/api/v1/uploads/{uploadId}/parts/{index}']?.put;
+      if (partOperation && !('$ref' in partOperation)) {
+        partOperation.parameters = [
+          ...(partOperation.parameters ?? []),
+          { in: 'header', name: 'Content-Length', required: true, schema: { type: 'integer', minimum: 1 }, description: 'Exact expected chunk length.' },
+          { in: 'header', name: 'X-Chunk-SHA256', required: true, schema: { type: 'string', pattern: '^[a-f0-9]{64}$' }, description: 'Lowercase SHA-256 of this chunk.' },
+        ];
+        partOperation.requestBody = {
+          required: true,
+          content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary', description: 'One bounded upload chunk, streamed without buffering.' } } },
+        };
+      }
       return openapiObject;
     },
   });
@@ -77,8 +92,10 @@ export async function buildApp(options: { config: Config; db: SqliteDatabase; pr
     if (request.url.startsWith('/api/v1/')) await authenticate(request, reply);
   });
   const repository = new JobRepository(db);
+  const uploadRepository = new UploadRepository(db);
   await healthRoutes(app, { db, dataDir: config.dataDir });
-  await jobRoutes(app, { config, repository, provider });
+  await jobRoutes(app, { config, repository, provider, uploadRepository });
+  await uploadRoutes(app, { config, repository: uploadRepository });
   app.setNotFoundHandler(async () => {
     throw new AppError('NOT_FOUND', 'Route not found.', 404);
   });
@@ -102,8 +119,9 @@ export async function buildApp(options: { config: Config; db: SqliteDatabase; pr
     }
     const log = appError.statusCode >= 500 ? request.log.error.bind(request.log) : request.log.warn.bind(request.log);
     log({ err: { code: appError.code, message: appError.message }, statusCode: appError.statusCode }, 'request failed');
+    if (appError.statusCode === 429 && appError.retryable) reply.header('retry-after', '1');
     return reply.code(appError.statusCode).send({
-      error: { code: appError.code, message: appError.message, requestId: request.id },
+      error: { code: appError.code, message: appError.message, requestId: request.id, ...(appError.details ? { details: appError.details } : {}) },
     });
   });
   await app.ready();

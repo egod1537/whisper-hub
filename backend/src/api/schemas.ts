@@ -6,6 +6,7 @@ export const errorResponseSchema = z.object({
     code: z.string(),
     message: z.string(),
     requestId: z.string(),
+    details: z.record(z.string(), z.unknown()).optional(),
   }),
 });
 
@@ -66,5 +67,34 @@ export const systemStatusSchema = z.object({
   provider: z.object({ reachable: z.boolean(), model: z.string() }),
   jobs: z.object({ processing: z.number().int(), queued: z.number().int() }),
   worker: z.object({ fresh: z.boolean(), lastHeartbeatAt: z.string().nullable() }),
+  uploads: z.object({ active: z.number().int(), stagedBytes: z.number().int(), finalizing: z.number().int() }),
+});
+
+export const createUploadBodySchema = z.strictObject({
+  filename: z.string().min(1).max(1024),
+  sizeBytes: z.number().int().positive(),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  mimeType: z.string().min(1).max(255).optional(),
+  language: z.string().min(1).max(16),
+  formats: z.array(z.enum(outputFormats)).min(1).max(outputFormats.length),
+});
+
+export const uploadParamsSchema = z.object({ uploadId: z.uuid() });
+export const uploadPartParamsSchema = uploadParamsSchema.extend({ index: z.coerce.number().int().nonnegative() });
+
+export const uploadStatusSchema = z.object({
+  uploadId: z.string(), status: z.enum(['uploading', 'finalizing', 'completed', 'expired', 'aborted']),
+  sizeBytes: z.number().int().positive(), chunkSizeBytes: z.number().int().positive(), totalChunks: z.number().int().positive(),
+  receivedParts: z.array(z.number().int().nonnegative()), receivedBytes: z.number().int().nonnegative(), expiresAt: z.iso.datetime(),
+  jobId: z.string().nullable(), error: z.object({ code: z.string(), message: z.string() }).nullable(),
+});
+
+export const createUploadResponseSchema = z.object({
+  uploadId: z.string(), chunkSizeBytes: z.number().int().positive(), totalChunks: z.number().int().positive(),
+  expiresAt: z.iso.datetime(), status: z.enum(['uploading', 'finalizing', 'completed', 'expired', 'aborted']),
+});
+
+export const completeUploadResponseSchema = z.object({
+  uploadId: z.string(), status: z.enum(['finalizing', 'completed']), jobId: z.string().nullable(), jobUrl: z.string().nullable(),
 });
 

@@ -1,0 +1,14 @@
+MILESTONE 04 — FINALIZATION INTO EXISTING WHISPER JOB QUEUE
+Must reuse current job model/validation/enqueue behavior. Do not create a separate transcription pipeline.
+
+Finalization:
+1. Acquire session finalizer lease transactionally; ensure not expired/aborted.
+2. Confirm every expected part exists; verify size and digest metadata; stream parts in index order into same-filesystem assembled staging file, calculating final SHA-256 and exact aggregate count. Do not concatenate via shell or load memory. Never accept sparse or missing chunks.
+3. If client supplied full SHA-256, require exact match. Without client full hash, still compute and store digest for audit.
+4. Atomic rename staging to a safe job-source path; ensure job worker can read this path in shared /data mount.
+5. In one SQLite transaction insert exactly one queued job + mark upload session completed with its jobId. Handle post-rename/pre-commit crashes by idempotent reconciliation.
+6. Cleanup session parts only AFTER stable job source exists and job transaction committed; cleanup must not delete job input.
+
+Cloudflare timeouts: a synchronous 'complete' that streams a 2GiB local file could exceed proxy wall-time even with no network upload. Prefer finalize as an asynchronous bounded task: POST /complete returns 202 with status finalizing, a dedicated local finalizer loop does assembly and queue insertion, GET /uploads/:id later returns completed with jobId. Document this exact contract instead of promising immediate jobId; update 01 API if implementing async (preferred). Ensure finalizer process is started by Compose and can recover stale leases. Do not put multipart assembly in the Whisper worker's single inference slot.
+
+Client must not report 'transcription queued' until session.status=completed and jobId exists. Treat processing as a distinct phase. Preserve source hash and options (language, formats). Existing job size cap needs refactor: retain MAX_UPLOAD_BYTES for legacy direct endpoint, allow configured MAX_RESUMABLE_UPLOAD_BYTES for assembled job source. Worker duration ceiling MAX_DURATION_SECONDS remains independent (2h by default), so file >250MiB can still fail if video is too long.

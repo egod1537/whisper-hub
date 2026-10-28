@@ -1,0 +1,13 @@
+MILESTONE 05 — MINIMAL REACT/BLUEPRINT UX
+Inspect existing frontend first; preserve its current React/TypeScript/Vite and @blueprintjs layout. Do not replace unrelated UI. Keep one simple page with upload form, language select (auto/ko/ja/en as supported), output format checkboxes, upload progress, queue/jobs list, transcript/download controls.
+
+Upload UX:
+- User selects one audio/video file; display filename, human-readable size, options.
+- For large files (or all files), POST /uploads to obtain session id/chunk size; use File.slice(start,end) for chunks. Build SHA-256 per part with browser crypto.subtle.digest on max-20MiB chunk (acceptable bounded per-part memory), send binary PUT with X-Chunk-SHA256 and Content-Length automatically set by browser. Do not attempt to set forbidden browser Content-Length manually.
+- Upload 3 chunks concurrently, cap in-flight memory. Show real byte-based upload progress (completed bytes only, optionally upload in-flight with XHR). Never fabricate transcription progress percentage.
+- Automatic retry each retryable network/429/5xx error at most 3 times with exponential backoff and jitter; no retries for 400/401/403/409/410/413/422 except explicit user action.
+- Persist only non-secret session resume metadata in localStorage (uploadId, file metadata, index), NEVER API key or media contents. Browsers cannot reopen a local File after reload without user's re-selection; ask user to pick original file again and verify size/name and, preferably, full SHA-256 before resume. Read GET /uploads/:id to skip stored indices; never trust local cache as authoritative. Key may be kept in in-memory only, and ask again after reload.
+- After all parts acknowledged, POST /complete; poll session status finalizing -> completed. Once jobId is present, show the job in existing queue and poll its state. Handle abort through DELETE /uploads/:id only before finalized.
+- Keep existing direct upload available for small files if useful; avoid parallel contradictory logic.
+
+Use Blueprint: FileInput or custom input, FormGroup, HTMLSelect, Checkbox, Button, Callout, ProgressBar, HTMLTable and Toast/Alert as appropriate. Layout accessible on mobile, simple dense desktop layout. No fake demo statuses in production. Errors actionable. Download filenames sanitized and preserve UTF-8. No frontend external secret storage.

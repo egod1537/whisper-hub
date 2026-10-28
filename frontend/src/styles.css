@@ -90,15 +90,35 @@ button, input, select { font: inherit; }
   outline-offset: 2px;
 }
 
-.selected-file {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+.selected-files {
   margin: -6px 0 16px;
   padding: 8px 10px;
   background: #f6f7f9;
   border-radius: 3px;
+}
+
+.selected-files-summary,
+.selected-files li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.selected-files-summary { margin-bottom: 6px; }
+.selected-files-summary strong { margin-right: auto; }
+
+.selected-files ul {
+  max-height: 130px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.selected-files li {
+  padding: 5px 2px;
+  border-top: 1px solid #e1e5e8;
 }
 
 .filename {
@@ -108,8 +128,9 @@ button, input, select { font: inherit; }
   white-space: nowrap;
 }
 
-.selected-file .filename { flex: 1; font-weight: 600; }
+.selected-files .filename { flex: 1; }
 .muted { color: #5f6b7c; font-size: 12px; white-space: nowrap; }
+.input-count { margin-top: 4px; color: #5f6b7c; font-size: 12px; text-align: right; }
 
 .format-fieldset {
   min-width: 0;
@@ -142,6 +163,8 @@ button, input, select { font: inherit; }
   color: #5f6b7c;
   font-size: 13px;
 }
+
+.upload-status span { min-width: 0; overflow-wrap: anywhere; }
 
 .upload-panel .bp6-progress-bar { margin: 0 0 12px; }
 
@@ -263,8 +286,10 @@ button, input, select { font: inherit; }
   .navbar-inner, .app-main { width: min(100% - 20px, 1000px); }
   .app-main { padding-top: 12px; }
   .panel { padding: 14px; }
-  .selected-file { align-items: flex-start; flex-wrap: wrap; }
-  .selected-file .filename { flex-basis: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .selected-files-summary { flex-wrap: wrap; }
+  .selected-files-summary strong { flex-basis: 100%; }
+  .selected-files li { align-items: flex-start; }
+  .selected-files .filename { white-space: normal; overflow-wrap: anywhere; }
   .job-row { align-items: flex-start; flex-direction: column; gap: 0; padding-bottom: 6px; }
   .job-main { width: 100%; }
   .job-actions { width: 100%; justify-content: flex-start; padding: 0 8px; }

@@ -20,4 +20,12 @@ describe('static brand assets', () => {
     expect(nginx).toMatch(/location \/web-api\/ \{[\s\S]*X-Whisper-Hub-Web-Token "\$\{WEB_PROXY_TOKEN\}"/);
     expect(nginx).toMatch(/location \/api\/ \{[\s\S]*X-Whisper-Hub-Web-Token ""/);
   });
+
+  it('re-resolves the API container after backend-only deployments', () => {
+    const root = path.resolve(import.meta.dirname, '../..');
+    const nginx = fs.readFileSync(path.join(root, 'nginx.conf'), 'utf8');
+    expect(nginx).toContain('resolver 127.0.0.11 valid=10s ipv6=off;');
+    expect(nginx).toMatch(/upstream api_backend \{[\s\S]*server api:3000 resolve;/);
+    expect(nginx.match(/proxy_pass http:\/\/api_backend;/g)).toHaveLength(3);
+  });
 });

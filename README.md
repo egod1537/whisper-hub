@@ -193,6 +193,8 @@ docker compose run --rm -v "$(pwd)/backups:/backup" worker \
   node dist/cli/backup.js /backup/whisper-hub.sqlite
 ```
 
+The backup command never runs migrations; it copies the schema exactly as it exists when invoked. Do not open `data/whisper-hub.sqlite` with the macOS host `sqlite3` process while containers are running. With Docker Desktop or OrbStack bind mounts, host and Linux VM file locks may not coordinate safely. Use the container backup command above, or stop every service that can open the database before host-side inspection.
+
 For a backup consistent with media files, stop API, upload finalizer, and worker, run the database backup, then copy `data/uploads` and `data/results` while they remain stopped:
 
 ```sh

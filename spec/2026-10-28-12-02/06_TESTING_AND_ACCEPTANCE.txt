@@ -1,0 +1,43 @@
+MILESTONE 06 — TEST PLAN & QUALITY GATES
+
+LOCAL QUALITY GATES
+pnpm lint, pnpm typecheck, pnpm test, pnpm build. CI on GitHub Actions Linux runs unit/API/integration tests with fake provider and ffmpeg fixture. Native Mac hardware E2E is manual/opt-in; CI must not claim Metal verified.
+
+UNIT TESTS
+- parsing, size/type/format/language limits
+- queue transitions, FIFO ordering, attempts/backoff, expired lease recovery, heartbeat
+- timestamp formatting SRT/VTT, Unicode Korean/Japanese, empty transcript
+- file paths, filename normalization, safe download headers
+- config fails fast for missing API_KEY
+
+API CONTRACT TESTS
+- unauthorized 401 on job endpoints
+- upload 202 then status queued, correct link paths
+- invalid inputs errors 400/413/415/422
+- idempotency same key/content 200, mismatch 409, cleanup on upload failure
+- list cursor pagination stable with same created_at and IDs
+- cancel queued and processing, conflict completed
+- retry failed only
+- results 409 before completion, available download types on completion
+- consistent error requestId; OpenAPI contract snapshot
+
+CONCURRENCY & RECOVERY
+- simultaneously started workers never claim same job
+- processing heartbeat/lease expiry, process crash then recovery
+- no duplicate published result after crash
+- with queued jobs 1,2,3, claim order is 1,2,3
+- retry delayed job does not block eligible jobs
+- processing cancellation never accidentally marks completed
+- docker compose down/up maintains pending jobs and finished results
+
+E2E ON MAC MINI
+1. Run native whisper-server (Metal) + compose.
+2. Upload short Korean speech WAV; 202 then queued/processing/completed; validate Korean text meaningfully.
+3. Download TXT, SRT, JSON; check timestamps and UTF-8.
+4. Queue at least 3 jobs and observe one concurrent worker.
+5. Stop worker in processing, restart, ensure lease recovery.
+6. Stop native server; verify retry/backoff and recovery once restarted.
+7. Verify local-only API port; inspect host server port exposure.
+
+ACCEPTANCE
+All tests green; README complete; no unhandled promise rejection, no shell injection, no secrets in logs, data persisted across restart. In final Codex report provide commands run, pass/fail, what was not verified, and any deviations needing approval.

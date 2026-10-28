@@ -1,0 +1,32 @@
+MILESTONE 05 — MAC MINI / DOCKER COMPOSE OPERATIONS
+
+DEPLOYMENT TOPOLOGY
+Mac mini host: native whisper.cpp whisper-server compiled with GGML_METAL, model installed on host; listens on port 8080 reachable by Docker host.docker.internal.
+Docker Desktop Linux containers: api (Node TypeScript), worker (Node TypeScript + ffmpeg/ffprobe). Shared durable bind mount: ./data:/data (local Mac filesystem). No direct Metal device mapping in container.
+
+COMPOSE REQUIREMENTS
+- api: build backend Dockerfile, command node dist/api/main.js, publish 127.0.0.1:3000:3000 by default, restart unless-stopped, healthcheck, read/write /data, environment via .env.
+- worker: same image, command node dist/worker/main.js, restart unless-stopped, shares /data, no published ports.
+- init/migration: atomic startup migration with one-time command before services (or lock-safe migration entrypoint); avoid multiple racing migration writers.
+- no Redis/Postgres required for MVP.
+- least privilege container user, multi-stage builds, pinned dependency lock file, graceful SIGTERM.
+
+NATIVE MAC WHISPER SETUP
+Provide scripts/setup-macos-whisper.sh and scripts/start-macos-whisper.sh (reviewable, no curl|bash). Show native source checkout pinned commit/tag, cmake build with Metal enabled, model download with checksum/README if available, native server start. Follow pinned version's whisper-server flags and help (don't invent flags). Server may bind 0.0.0.0 to let Docker VM reach it; restrict port via macOS firewall/network, use host-only/interface binding when verified feasible. Never expose 8080 to internet. The model must be multilingual if Korean/Japanese transcription required.
+
+NETWORK / SECURITY
+API published only on localhost by default. Access externally only via explicit secure reverse proxy or Tailscale with authentication and TLS. Host whisper-server is trusted internal dependency; prevent unauthenticated LAN/public ingress. host.docker.internal route documented and verified with a connectivity check inside container. Docker Desktop must be running even after Mac reboot; configure startup operationally, do not assume daemon is on automatically.
+
+PERSISTENCE
+/data/whisper-hub.sqlite + SQLite WAL sidecars + /data/uploads + /data/results persistent across compose down/up. Back up DB and media consistently, preferably SQLite backup API, not blind copying during writes. Do not commit /data.
+
+COMMANDS IN README
+- install prerequisites macOS Docker Desktop, Xcode CLT, cmake, ffmpeg as needed.
+- create .env securely; API_KEY strong random; do not print secret in logs.
+- native whisper setup, starting server, health check.
+- docker compose build && docker compose up -d
+- curl /health/ready; authenticated curl upload and status polling; result download.
+- docker compose logs -f api worker; graceful shutdown; upgrade; backup/restore.
+
+DELIVERABLES
+Dockerfile, compose.yaml, .env.example, scripts, documentation. Make default local use secure. Explicitly state that macOS Metal inference is NOT inside Docker.

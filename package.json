@@ -1,0 +1,22 @@
+{
+  "name": "whisper-hub",
+  "private": true,
+  "packageManager": "pnpm@10.12.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  },
+  "scripts": {
+    "build": "pnpm --filter whisper-hub-backend build",
+    "lint": "pnpm --filter whisper-hub-backend lint",
+    "typecheck": "pnpm --filter whisper-hub-backend typecheck",
+    "test": "pnpm --filter whisper-hub-backend test",
+    "openapi": "pnpm --filter whisper-hub-backend openapi"
+  }
+}
+

@@ -1,0 +1,67 @@
+MILESTONE 01 — ARCHITECTURE, REPOSITORY SCAFFOLD
+
+OBJECTIVE
+Implement a maintainable backend-only TypeScript monorepo for whisper-hub with API and independent queue worker. Keep Whisper provider replaceable, avoid overengineering.
+
+STACK
+- Node.js LTS with TypeScript strict, ESM, pnpm.
+- Fastify HTTP framework; @fastify/multipart, @fastify/swagger, @fastify/swagger-ui, @fastify/rate-limit, @fastify/helmet as needed.
+- SQLite with better-sqlite3 and migrations (e.g. Drizzle ORM) in WAL mode, busy_timeout.
+- Zod schemas for environment and input; use a single source of truth for request validation and OpenAPI, choose compatible libraries.
+- Vitest + Fastify inject for testing.
+- ffmpeg/ffprobe installed in worker image for media normalization.
+- Structured JSON logs using Fastify/Pino; UTC timestamps, ULID or UUID identifiers.
+
+LAYOUT (adjust if architecture benefits)
+backend/
+  src/api/main.ts
+  src/api/routes/jobs.ts
+  src/api/routes/health.ts
+  src/worker/main.ts
+  src/shared/config.ts
+  src/shared/db/{schema,migrate,connection}.ts
+  src/shared/queue/{repository,types}.ts
+  src/shared/storage/{files,paths}.ts
+  src/shared/providers/{interface,whisperHttp}.ts
+  src/shared/export/{txt,srt,vtt,json}.ts
+  src/shared/errors.ts
+  tests/{api,queue,worker,integration}/
+  migrations/
+  package.json
+  tsconfig.json
+  Dockerfile
+compose.yaml
+.env.example
+README.md
+
+SEPARATION
+- API handles auth, validation, upload streaming, persistence, and retrieval. Must not execute transcription.
+- Worker exclusively reserves jobs, normalizes input, invokes provider, writes output, handles retries.
+- Both share same mounted durable /data volume for DB and uploads/results. One worker by default.
+- Host whisper.cpp service is separate from Docker Compose.
+- Provider interface should allow a test fake and future providers.
+
+CONFIG VARS
+API_HOST=0.0.0.0, API_PORT=3000, DATA_DIR=/data
+DB_PATH=/data/whisper-hub.sqlite
+WHISPER_BASE_URL=http://host.docker.internal:8080
+API_KEY=(required unless explicitly insecure local dev)
+MAX_UPLOAD_BYTES=262144000 (250 MiB)
+MAX_DURATION_SECONDS=7200 (2h)
+WORKER_POLL_MS=1000, WORKER_CONCURRENCY=1
+JOB_LEASE_SECONDS=900, JOB_MAX_ATTEMPTS=3
+WHISPER_TIMEOUT_MS=7200000
+DEFAULT_MODEL=base (host-configured, informational only)
+Allowed origin/CORS disabled by default; optional explicit CORS_ORIGINS.
+
+RULES
+- Prefer correctness, idempotent state transitions, clear contracts, failure recovery.
+- Never block HTTP request waiting for inference; return 202.
+- No fabricated progress percentages. Report phase only until trustworthy metrics exist.
+- Never store user-supplied filename as path; generate server-side ID and preserve original name only as metadata.
+- Bound upload size and duration, sanitize error responses, prevent path traversal.
+- Use literal environment-based secrets, never commit .env or media/models.
+- No public exposure by default; authentication required for all /api/v1/jobs routes.
+
+DELIVERABLES
+Scaffold, configuration validation, build/typecheck/lint/test scripts, README quickstart, .gitignore, initial healthy GET /health/live.

@@ -1,0 +1,24 @@
+MILESTONE 07 — SECURITY, RETENTION, OPERABILITY
+
+THREAT MODEL
+Private self-hosted service first. Even LAN/public-facing deployments must defend against untrusted file uploads, huge media, path traversal, data leakage and unauthenticated job enumeration.
+
+MUST IMPLEMENT
+- Bearer API key checked using timing-safe comparison; fail startup when missing (unless explicit TEST_MODE). Keep secret out of .env.example, README samples and logs.
+- Restrict CORS (off by default), add security headers and IP-based rate limiting. Document rate limiting limitations behind proxies.
+- Hard limits on upload bytes, multipart file count, parsed form fields, total media duration, ffmpeg execution/output sizes, concurrent active jobs; no request body buffering into memory.
+- Never run uploaded content as shell command; spawn binary with fixed args only. Validate generated paths are inside /data; use opaque IDs.
+- Atomic file writes, restrictive permissions, temp cleanup; fail safe on storage-full errors.
+- Log requestId, jobId, status transitions, latency, attempts, sanitized errors; never log audio/transcript bodies or Authorization headers.
+- Retention vars: COMPLETED_RETENTION_DAYS=7, FAILED_RETENTION_DAYS=3, SOURCE_RETENTION_DAYS=1 (configurable). Provide a manual cleanup CLI and opt-in scheduled cleanup; never delete active jobs. If privacy-first shorter defaults chosen, document clearly.
+- API error values should be stable machine-readable codes. Do not leak provider response bodies/stderr to users.
+- Expose minimal /health/live publicly; ready excludes secrets and file paths. Swagger local-only or authenticated.
+
+RECOMMENDED POST-MVP (NOT MVP)
+- user identity/multi-tenancy, per-user job ownership, quotas
+- object storage + Postgres/Redis if multi-host or higher scale
+- TLS reverse proxy/Tailscale, audit, metrics/dashboard, signed download links
+- resumable uploads, streaming notifications (SSE), diarization, language options, billing
+
+DOCUMENTATION
+README must distinguish local deployment from internet exposure, show how to rotate API_KEY, reset data, backup/restore without SQLite WAL corruption, and update pinned whisper.cpp. Deployment guide must state macOS host needs restart strategy for native server (launchd optional) and actual network testing. Avoid unsupported security guarantees.

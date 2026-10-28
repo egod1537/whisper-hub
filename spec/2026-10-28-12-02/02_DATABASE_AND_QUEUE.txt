@@ -1,0 +1,63 @@
+MILESTONE 02 — DURABLE SQLITE JOB QUEUE
+
+OBJECTIVE
+Provide crash-safe FIFO queue persisted on Mac mini volume. API and worker are separate processes; DB transactions enforce exclusive reservation.
+
+SCHEMA jobs
+id TEXT PRIMARY KEY (UUIDv7 or ULID)
+status TEXT NOT NULL CHECK IN (queued, processing, completed, failed, canceled)
+phase TEXT NULL CHECK IN (validating, converting, transcribing, exporting)
+created_at TEXT NOT NULL UTC ISO8601
+updated_at TEXT NOT NULL UTC ISO8601
+started_at TEXT NULL
+completed_at TEXT NULL
+original_filename TEXT NOT NULL
+media_type TEXT NOT NULL
+file_size_bytes INTEGER NOT NULL
+source_path TEXT NOT NULL (server-generated relative path)
+duration_seconds REAL NULL
+language TEXT NOT NULL DEFAULT 'auto'
+requested_output_formats TEXT NOT NULL (JSON array, validated)
+provider TEXT NOT NULL DEFAULT 'whisper_cpp'
+model TEXT NULL
+attempts INTEGER NOT NULL DEFAULT 0
+max_attempts INTEGER NOT NULL DEFAULT 3
+lease_owner TEXT NULL
+lease_expires_at TEXT NULL
+cancel_requested INTEGER NOT NULL DEFAULT 0
+error_code TEXT NULL
+error_message TEXT NULL (redacted/safe)
+result_base_path TEXT NULL
+result_metadata_json TEXT NULL
+idempotency_key TEXT NULL UNIQUE (optional; stored with body hash)
+request_hash TEXT NULL
+next_attempt_at TEXT NULL
+Indexes: (status,next_attempt_at,created_at,id), (lease_expires_at), (created_at,id).
+
+ATOMIC RESERVATION
+Use BEGIN IMMEDIATE transaction on shared SQLite, select oldest eligible queued job WHERE next_attempt_at IS NULL OR <= now ORDER BY created_at,id LIMIT 1, update to processing, attempts = attempts +1, lease_owner, lease_expires_at. Commit before processing. Never have two workers claim same job.
+
+LIFECYCLE
+queued -> processing -> completed
+queued -> canceled
+processing -> canceled (cooperative cancellation at safe boundary)
+processing -> queued (retryable failure if attempts < max_attempts, with backoff)
+processing -> failed (terminal / exhausted attempts)
+failed -> queued (explicit retry endpoint; clear errors, retain attempts policy as documented)
+COMPLETED/CANCELED terminal; never overwrite completed outputs. Retry can only target failed jobs. Do not erase previous error without retaining audit log.
+
+RECOVERY
+Worker lease/heartbeat renews processing lease every <= 30s; recovery finds processing jobs with expired lease and requeues or fails based on remaining attempts. Must handle worker process death and reboot. Files written to temporary paths, atomically renamed upon success. On recovery clean job-specific partial temp outputs, not valid completed results.
+
+CANCELLATION
+Queued: immediate cancel within transaction.
+Processing: mark cancel_requested = 1, worker checks at phase boundaries; if feasible abort in-flight HTTP request via AbortController. Document that cancellation can take time and is not guaranteed immediate. A canceled job must not transition to completed.
+
+FIFO
+Order eligible queue by created_at ASC, id ASC. Retried jobs use next_attempt_at backoff and may be bypassed while not eligible. Queue position for queued status = count of eligible queued jobs ahead (1-based), can change. No fixed ETA.
+
+DATA SAFETY
+Set WAL, busy_timeout; use one shared local filesystem volume, not NFS/SMB for SQLite. Transaction around state transitions only, never during ffmpeg/inference. Startup migrations before accepting requests. Do not attempt multiple replicated SQLite writer hosts.
+
+DELIVERABLES
+Migrations, repository methods, atomic claim, heartbeat, recovery, cancellation, status transition rules, tests including two concurrent claimers.

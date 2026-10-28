@@ -1,0 +1,32 @@
+MILESTONE 04 — TRANSCRIPTION WORKER + NATIVE WHISPER PROVIDER
+
+TARGET
+Mac mini runs native whisper.cpp whisper-server (Metal on Apple Silicon). Docker TypeScript worker contacts it at http://host.docker.internal:8080 over HTTP. Do not run GPU inference in Linux Docker containers. The default whisper.cpp /inference endpoint supports multipart file; verify exact supported request/response formats against pinned whisper.cpp version during integration. Never assume a streaming progress endpoint exists.
+
+PROVIDER INTERFACE
+TranscriptionProvider.transcribe({wavPath,language,signal}) -> normalized {segments:[{startMs,endMs,text}],languageDetected?,text,providerMetadata?}; may produce a formatted response (e.g. JSON/verbose JSON) but normalize. If the server cannot reliably return timestamps, treat SRT/VTT as unsupported and surface an explicit error; do not invent timestamps.
+
+PREPROCESSING
+1. Read uploaded file via server-created path under /data/uploads; verify inside DATA_DIR.
+2. ffprobe validates media and reads duration. Fail MEDIA_INVALID on bad format; DURATION_LIMIT_EXCEEDED if over MAX_DURATION_SECONDS.
+3. ffmpeg converts to mono 16 kHz PCM signed 16-bit WAV. Use execFile/spawn with arguments, never shell interpolation. Enforce maximum execution time, output size and process kill on cancel.
+4. Send WAV via multipart to host whisper-server; use AbortController with WHISPER_TIMEOUT_MS. Avoid treating arbitrary HTTP 200 as success; validate transcript structure.
+5. Normalize segment timing/text, write results under /data/results/<jobId>/{transcript.txt,transcript.srt,transcript.vtt,transcript.json}. All time offsets non-negative and ordered. SRT uses HH:MM:SS,mmm, VTT HH:MM:SS.mmm.
+6. Write files to temp directory and atomically publish; mark completed only after successful publish.
+7. Clean temp WAV; keep original input according to retention policy.
+
+WORKER LOOP
+- poll queued job every WORKER_POLL_MS; claim transactionally.
+- heartbeats renew lease while working; record worker heartbeat for /system/status.
+- respect cancel flag at stages; attempt to abort active provider request.
+- distinguish retryable errors (network unavailable, 429/5xx, timeout) vs terminal (invalid media, unsupported language/format, invalid duration).
+- exponential bounded backoff e.g. 10s/30s/60s; attempts <= configured max.
+- never invoke more than WORKER_CONCURRENCY concurrent transcriptions (MVP default 1). If higher concurrency set, test and document Mac performance.
+- crash recovery from lease expiry and orphan temp cleanup.
+- enforce safe limits to prevent media conversion decompression bombs.
+
+MODEL
+Whisper model is loaded by macOS native server at startup; API's requested model is not dynamically changeable in MVP. Report configured model in /system/status if known. Support auto language detection if pinned server supports it; otherwise document limitation explicitly. Use multilingual model (not *.en) if Korean/Japanese needed.
+
+TESTS
+FakeTranscriptionProvider for deterministic tests. Test timing conversion, output file formats, retries, cancellation, timeout, corrupted response, ffmpeg failure, worker crash recovery. Real integration test behind RUN_NATIVE_WHISPER_E2E=1 requires configured host server and actual media fixture; no fake success assertions.

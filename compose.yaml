@@ -1,0 +1,72 @@
+name: whisper-hub
+
+x-common-environment: &common-environment
+  NODE_ENV: production
+  API_KEY: ${API_KEY:?Set API_KEY in .env}
+  DATA_DIR: /data
+  DB_PATH: /data/whisper-hub.sqlite
+  WHISPER_BASE_URL: ${WHISPER_BASE_URL:-http://host.docker.internal:8080}
+  MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-262144000}
+  MAX_DURATION_SECONDS: ${MAX_DURATION_SECONDS:-7200}
+  WORKER_POLL_MS: ${WORKER_POLL_MS:-1000}
+  WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-1}
+  JOB_LEASE_SECONDS: ${JOB_LEASE_SECONDS:-900}
+  JOB_MAX_ATTEMPTS: ${JOB_MAX_ATTEMPTS:-3}
+  WHISPER_TIMEOUT_MS: ${WHISPER_TIMEOUT_MS:-7200000}
+  DEFAULT_MODEL: ${DEFAULT_MODEL:-base}
+  COMPLETED_RETENTION_DAYS: ${COMPLETED_RETENTION_DAYS:-7}
+  FAILED_RETENTION_DAYS: ${FAILED_RETENTION_DAYS:-3}
+  SOURCE_RETENTION_DAYS: ${SOURCE_RETENTION_DAYS:-1}
+  CORS_ORIGINS: ${CORS_ORIGINS:-}
+  TRUST_PROXY: ${TRUST_PROXY:-false}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+
+x-common: &common
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  image: whisper-hub:local
+  restart: unless-stopped
+  environment: *common-environment
+  volumes:
+    - ./data:/data
+  extra_hosts:
+    - host.docker.internal:host-gateway
+
+services:
+  migrate:
+    <<: *common
+    restart: "no"
+    command: ["node", "dist/shared/db/migrate-cli.js"]
+
+  api:
+    <<: *common
+    command: ["node", "dist/api/main.js"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${API_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  worker:
+    <<: *common
+    command: ["node", "dist/worker/main.js"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    stop_grace_period: 30s
+
+  cleanup:
+    <<: *common
+    profiles: ["retention"]
+    command: ["node", "dist/cli/cleanup.js", "--apply", "--schedule-hours", "24"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+

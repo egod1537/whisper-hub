@@ -1,0 +1,57 @@
+MILESTONE 03 — REST API v1 CONTRACT
+
+BASE PATH /api/v1
+JSON timestamps: ISO 8601 UTC. IDs are opaque strings. Authenticate all /api/v1 endpoints with Authorization: Bearer <API_KEY>, except /health endpoints (minimal status). Swagger /docs must not leak credentials and should be protected or local-only in production.
+
+POST /api/v1/jobs
+Content-Type multipart/form-data
+Fields:
+- file REQUIRED, exactly one, audio/video; max MAX_UPLOAD_BYTES.
+- language OPTIONAL, default auto; auto or validated BCP-47/ISO locale accepted by provider; reject unsupported language.
+- formats OPTIONAL, comma-separated subset txt,srt,vtt,json; default txt,srt,json; no duplicates, canonical order.
+- prompt OPTIONAL, not supported in MVP; reject rather than silently ignore.
+Header: Idempotency-Key OPTIONAL, 1-128 safe ASCII chars. Same key + identical content and options returns existing job (200); same key with different content/options -> 409. Streaming hash needed. Never read whole file into memory.
+Response 202 JSON:
+{
+  "id":"job-id","status":"queued","phase":null,
+  "createdAt":"2026-10-28T03:00:00.000Z",
+  "queuePosition":1,
+  "links":{"self":"/api/v1/jobs/job-id","results":"/api/v1/jobs/job-id/results"}
+}
+Reject 400 malformed request, 401 unauthorized, 409 idempotency conflict, 413 too large, 415 unsupported file, 422 invalid media/options, 429 rate-limited, 503 storage unavailable.
+
+GET /api/v1/jobs?status=queued&limit=20&cursor=<opaque>
+Newest first (created_at DESC,id DESC), max limit 100; cursor pagination stable by created_at+id. Response:
+{"items":[JobSummary],"nextCursor":null|string}
+JobSummary includes id,status,phase,createdAt,updatedAt,originalFilename,attempts,queuePosition (null unless queued),error {code,message} (null unless failed). No absolute filesystem paths.
+
+GET /api/v1/jobs/:id
+Response 200:
+{"id":"...","status":"processing","phase":"transcribing","createdAt":"...","updatedAt":"...","startedAt":"...","completedAt":null,"originalFilename":"sample.mp3","fileSizeBytes":12345,"durationSeconds":71.2,"language":"auto","formats":["txt","srt","json"],"attempts":1,"queuePosition":null,"error":null}
+404 if not found. No invented percent complete.
+
+DELETE /api/v1/jobs/:id
+If queued, cancel immediately; if processing, request cancellation. Return 202 status summary. If completed, failed, or canceled return 409 JOB_NOT_CANCELABLE. Does NOT immediately delete stored files. Repeated cancellation requests for queued/processing job are idempotent.
+
+POST /api/v1/jobs/:id/retry
+Only failed jobs: 202 with queued summary. Completed/queued/processing/canceled -> 409 JOB_NOT_RETRYABLE. A retry resets retry budget as a new user-initiated run while keeping same job ID, with separate attempt history; define exact policy and test it. Limit manual retry count or protect via rate limit.
+
+GET /api/v1/jobs/:id/results
+If completed: 200 {"jobId":"...","availableFormats":["txt","srt","json"],"files":[{"format":"txt","url":"/api/v1/jobs/.../results/txt"},...]}.
+If non-completed: 409 JOB_NOT_COMPLETE. If missing: 404.
+GET /api/v1/jobs/:id/results/:format
+Only requested and produced format, return file bytes with correct Content-Type (txt text/plain; srt application/x-subrip or text/plain; vtt text/vtt; json application/json), Content-Disposition attachment and safe filename. 404 for unavailable format, 409 when not completed. Stream file; never expose file path.
+
+GET /health/live 200 {"status":"ok"} if process running.
+GET /health/ready 200 if DB reachable and storage write-capable, otherwise 503. Do not fail readiness merely because whisper provider is temporarily down; expose provider connectivity separately in logs/health detail without secrets.
+GET /api/v1/system/status auth required: provider reachable?, current processing count, queued count, worker heartbeat freshness. Useful for UI without disclosing file names.
+
+ERROR SHAPE (all error statuses)
+{"error":{"code":"SOME_CODE","message":"Human-safe text","requestId":"..."}}
+RequestId in request logs and response header X-Request-ID; never include raw stderr, stack trace or filesystem path.
+
+CONTRACT RULES
+All enum/status/response types validated. OpenAPI 3 spec generated in repo and snapshot-tested. File upload written to temporary file and atomically registered as queued only after validation; cleanup on failure. Validate actual media through ffprobe/decoder in worker and fail with clear MEDIA_INVALID. Multipart parser must reject excess parts and multiple files.
+
+DELIVERABLES
+Routes, schemas, Swagger/OpenAPI, consistent errors, pagination, authorization, rate limiting, upload streaming, API tests.

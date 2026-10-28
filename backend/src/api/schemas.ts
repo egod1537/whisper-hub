@@ -52,6 +52,12 @@ export const createJobResponseSchema = z.object({
   links: z.object({ self: z.string(), results: z.string() }),
 });
 
+export const createYoutubeJobBodySchema = z.strictObject({
+  url: z.string().min(1).max(2_048),
+  language: z.string().min(1).max(16).default('auto'),
+  formats: z.array(z.enum(outputFormats)).min(1).max(outputFormats.length).default(['txt', 'srt', 'json']),
+});
+
 export const idParamsSchema = z.object({ id: z.string().min(1).max(128) });
 export const resultParamsSchema = idParamsSchema.extend({ format: z.enum(outputFormats) });
 export const listQuerySchema = z.object({

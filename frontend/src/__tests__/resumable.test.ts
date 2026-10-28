@@ -12,7 +12,7 @@ function apiForUpload(putUploadPart: WhisperApi['putUploadPart'], receivedParts:
     getUpload: vi.fn().mockResolvedValueOnce(status(receivedParts)).mockResolvedValue({ ...status([0, 1, 2, 3, 4]), status: 'completed', jobId: 'job-1' }),
     putUploadPart, completeUpload: vi.fn().mockResolvedValue({ uploadId: 'u-1', status: 'completed', jobId: 'job-1', jobUrl: '/api/v1/jobs/job-1' }),
     getJob: vi.fn().mockResolvedValue({ id: 'job-1', origin: 'web', status: 'queued', phase: null, createdAt: '2026-10-28T00:00:00Z', updatedAt: '2026-10-28T00:00:00Z', originalFilename: 'x.wav', attempts: 0, queuePosition: 1, error: null, startedAt: null, completedAt: null, fileSizeBytes: 10, durationSeconds: null, language: 'auto', formats: ['txt'] }),
-    abortUpload: vi.fn(), createJob: vi.fn(), listJobs: vi.fn(), getSystemStatus: vi.fn(), cancelJob: vi.fn(), pauseJob: vi.fn(), resumeJob: vi.fn(), retryJob: vi.fn(),
+    abortUpload: vi.fn(), createJob: vi.fn(), createYoutubeJob: vi.fn(), listJobs: vi.fn(), getSystemStatus: vi.fn(), cancelJob: vi.fn(), pauseJob: vi.fn(), resumeJob: vi.fn(), retryJob: vi.fn(),
     getResults: vi.fn(), fetchResultText: vi.fn(), downloadResult: vi.fn(),
   };
 }

@@ -50,6 +50,37 @@ describe('jobs API', () => {
     expect(conflict.json().error.code).toBe('IDEMPOTENCY_CONFLICT');
   });
 
+  it('queues canonical single-video YouTube links without downloading in the request', async () => {
+    const first = await context.app.inject({
+      method: 'POST', url: '/api/v1/jobs/youtube', headers: { ...webHeaders, 'idempotency-key': 'youtube-key' },
+      payload: { url: 'https://youtu.be/abc123xyz00?si=tracking', language: 'ko', formats: ['json', 'txt'] },
+    });
+    expect(first.statusCode).toBe(202);
+    expect(first.json()).toMatchObject({ origin: 'web', status: 'queued', phase: null });
+    const stored = context.repository.getRequired(first.json().id);
+    expect(stored).toMatchObject({
+      sourceType: 'youtube', sourceUrl: 'https://www.youtube.com/watch?v=abc123xyz00', fileSizeBytes: 0,
+      language: 'ko', requestedOutputFormats: ['txt', 'json'],
+    });
+    expect(fs.existsSync(resolveInside(context.directory, stored.sourcePath))).toBe(false);
+
+    const repeated = await context.app.inject({
+      method: 'POST', url: '/api/v1/jobs/youtube', headers: { ...authHeaders, 'idempotency-key': 'youtube-key' },
+      payload: { url: 'https://www.youtube.com/watch?v=abc123xyz00', language: 'ko', formats: ['txt', 'json'] },
+    });
+    expect(repeated.statusCode).toBe(200);
+    expect(repeated.json().id).toBe(first.json().id);
+    expect(repeated.json().origin).toBe('web');
+  });
+
+  it('rejects non-YouTube, playlist-only, and insecure YouTube URLs', async () => {
+    for (const url of ['https://example.com/watch?v=abc123xyz00', 'https://www.youtube.com/playlist?list=PL123', 'http://youtu.be/abc123xyz00']) {
+      const response = await context.app.inject({ method: 'POST', url: '/api/v1/jobs/youtube', headers: authHeaders, payload: { url, language: 'auto', formats: ['txt'] } });
+      expect(response.statusCode).toBe(422);
+      expect(response.json().error.code).toBe('YOUTUBE_INVALID_URL');
+    }
+  });
+
   it('rejects unsupported media, fields, language, and duplicate formats', async () => {
     const form = multipart([{ name: 'file', value: Buffer.from('x'), filename: 'x.bin', contentType: 'application/octet-stream' }]);
     const unsupported = await context.app.inject({ method: 'POST', url: '/api/v1/jobs', headers: { ...authHeaders, 'content-type': `multipart/form-data; boundary=${form.boundary}` }, payload: form.body });

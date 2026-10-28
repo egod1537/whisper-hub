@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AppError } from '../../src/shared/errors.js';
 import { WorkerService } from '../../src/worker/service.js';
 import { resolveInside, sourceRelativePath } from '../../src/shared/storage/paths.js';
+import type { YoutubeDownloader } from '../../src/shared/youtube/downloader.js';
 import type { TestContext } from '../helpers.js';
 import { createTestContext, makeWav } from '../helpers.js';
 
@@ -24,10 +25,10 @@ function createJob(id: string, data = makeWav(), maxAttempts = 3) {
   });
 }
 
-function worker() {
+function worker(youtubeDownloader: YoutubeDownloader = { async download() { throw new Error('unexpected YouTube download'); } }) {
   return new WorkerService({
     config: context.config, repository: context.repository, provider: context.provider,
-    workerId: 'test-worker', logger: pino({ level: 'silent' }),
+    youtubeDownloader, workerId: 'test-worker', logger: pino({ level: 'silent' }),
   });
 }
 
@@ -47,6 +48,28 @@ describe('worker', () => {
     createJob('job-invalid', Buffer.from('not-media'));
     await worker().runOnce();
     expect(context.repository.getRequired('job-invalid')).toMatchObject({ status: 'failed', errorCode: 'MEDIA_INVALID' });
+  });
+
+  it('downloads a queued YouTube source before the normal media pipeline', async () => {
+    const id = 'job-youtube';
+    context.repository.create({
+      id, originalFilename: 'YouTube abc123xyz00', mediaType: 'application/x-youtube-url', fileSizeBytes: 0,
+      sourcePath: sourceRelativePath(id), sourceType: 'youtube', sourceUrl: 'https://www.youtube.com/watch?v=abc123xyz00',
+      language: 'auto', requestedOutputFormats: ['txt'], maxAttempts: 3, model: 'base', origin: 'web',
+    });
+    const downloader: YoutubeDownloader = {
+      async download(_url, destinationPath) {
+        const data = makeWav();
+        fs.writeFileSync(destinationPath, data);
+        return { originalFilename: '테스트 영상.webm', mediaType: 'audio/webm', fileSizeBytes: data.length };
+      },
+    };
+
+    expect(await worker(downloader).runOnce()).toBe(true);
+    expect(context.repository.getRequired(id)).toMatchObject({
+      status: 'completed', originalFilename: '테스트 영상.webm', mediaType: 'audio/webm', sourceType: 'youtube',
+    });
+    expect(fs.existsSync(resolveInside(context.directory, sourceRelativePath(id)))).toBe(true);
   });
 
   it('backs off retryable provider errors and does not publish partial results', async () => {

@@ -27,7 +27,7 @@ function resultApi(text: string): WhisperApi {
     getResults: vi.fn().mockResolvedValue({ jobId: 'complete', availableFormats: ['txt', 'srt'] }),
     fetchResultText: vi.fn().mockResolvedValue(text),
     downloadResult: vi.fn().mockResolvedValue({ blob: new Blob(['x']), filename: 'complete.txt' }),
-    listJobs: vi.fn(), getJob: vi.fn(), getSystemStatus: vi.fn(), createJob: vi.fn(), createUpload: vi.fn(), getUpload: vi.fn(),
+    listJobs: vi.fn(), getJob: vi.fn(), getSystemStatus: vi.fn(), createJob: vi.fn(), createYoutubeJob: vi.fn(), createUpload: vi.fn(), getUpload: vi.fn(),
     putUploadPart: vi.fn(), completeUpload: vi.fn(), abortUpload: vi.fn(), cancelJob: vi.fn(), pauseJob: vi.fn(), resumeJob: vi.fn(), retryJob: vi.fn(),
   };
 }

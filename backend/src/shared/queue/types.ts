@@ -2,8 +2,10 @@ export const jobStatuses = ['queued', 'processing', 'pausing', 'paused', 'comple
 export type JobStatus = (typeof jobStatuses)[number];
 export const jobOrigins = ['web', 'api', 'unknown'] as const;
 export type JobOrigin = (typeof jobOrigins)[number];
-export const jobPhases = ['validating', 'converting', 'transcribing', 'exporting'] as const;
+export const jobPhases = ['fetching', 'validating', 'converting', 'transcribing', 'exporting'] as const;
 export type JobPhase = (typeof jobPhases)[number];
+export const jobSourceTypes = ['upload', 'youtube'] as const;
+export type JobSourceType = (typeof jobSourceTypes)[number];
 export const outputFormats = ['txt', 'srt', 'vtt', 'json'] as const;
 export type OutputFormat = (typeof outputFormats)[number];
 
@@ -12,6 +14,8 @@ export interface Job {
   status: JobStatus;
   phase: JobPhase | null;
   origin: JobOrigin;
+  sourceType: JobSourceType;
+  sourceUrl: string | null;
   createdAt: string;
   queueEnteredAt: string;
   updatedAt: string;
@@ -53,6 +57,8 @@ export interface CreateJobInput {
   maxAttempts: number;
   model: string;
   origin: JobOrigin;
+  sourceType?: JobSourceType;
+  sourceUrl?: string;
   idempotencyKey?: string;
   requestHash?: string;
 }

@@ -11,10 +11,12 @@ import type { JobRepository } from '../../shared/queue/repository.js';
 import { normalizeFilename, parseFormats, parseLanguage } from '../../shared/queue/options.js';
 import type { Job, OutputFormat } from '../../shared/queue/types.js';
 import type { UploadRepository } from '../../shared/uploads/repository.js';
+import { normalizeYoutubeUrl } from '../../shared/youtube/downloader.js';
 import { moveUploadIntoPlace, removePath, streamUploadToTemp } from '../../shared/storage/files.js';
 import { contentDisposition, resolveInside, safeDownloadBaseName, sourceRelativePath } from '../../shared/storage/paths.js';
 import {
   createJobResponseSchema,
+  createYoutubeJobBodySchema,
   errorResponseSchema,
   idParamsSchema,
   jobDetailSchema,
@@ -29,6 +31,10 @@ import { requestOrigin } from '../provenance.js';
 
 function requestHash(fileHash: string, language: string, formats: OutputFormat[]): string {
   return createHash('sha256').update(JSON.stringify({ fileHash, language, formats })).digest('hex');
+}
+
+function youtubeRequestHash(url: string, language: string, formats: OutputFormat[]): string {
+  return createHash('sha256').update(JSON.stringify({ source: 'youtube', url, language, formats })).digest('hex');
 }
 
 function decodeCursor(cursor: string): { createdAt: string; id: string } {
@@ -168,6 +174,77 @@ export async function jobRoutes(app: FastifyInstance, options: {
     } finally {
       if (stored) await removePath(stored.tempPath);
     }
+  });
+
+  app.post('/api/v1/jobs/youtube', {
+    config: { rateLimit: { max: 10, timeWindow: '1 hour' } },
+    schema: {
+      tags: ['jobs'],
+      body: createYoutubeJobBodySchema,
+      response: {
+        200: createJobResponseSchema, 202: createJobResponseSchema, 401: errorResponseSchema,
+        409: errorResponseSchema, 422: errorResponseSchema, 429: errorResponseSchema,
+      },
+    },
+  }, async (request, reply) => {
+    const idempotencyKeyHeader = request.headers['idempotency-key'];
+    if (Array.isArray(idempotencyKeyHeader) || (idempotencyKeyHeader !== undefined && !/^[\x21-\x7e]{1,128}$/.test(idempotencyKeyHeader))) {
+      throw new AppError('VALIDATION_FAILED', 'Idempotency-Key must contain 1-128 safe ASCII characters.', 422);
+    }
+    const body = createYoutubeJobBodySchema.parse(request.body);
+    const url = normalizeYoutubeUrl(body.url);
+    const language = parseLanguage(body.language);
+    const formats = parseFormats(body.formats);
+    const hash = youtubeRequestHash(url, language, formats);
+    if (idempotencyKeyHeader) {
+      const existing = repository.findByIdempotencyKey(idempotencyKeyHeader);
+      if (existing) {
+        if (existing.requestHash !== hash) throw new AppError('IDEMPOTENCY_CONFLICT', 'Idempotency key was already used for a different request.', 409);
+        return reply.code(200).send({
+          id: existing.id, origin: existing.origin, status: existing.status, phase: existing.phase, createdAt: existing.createdAt,
+          queuePosition: repository.queuePosition(existing.id),
+          links: { self: `/api/v1/jobs/${existing.id}`, results: `/api/v1/jobs/${existing.id}/results` },
+        });
+      }
+    }
+    const id = ulid();
+    const videoId = new URL(url).searchParams.get('v') ?? id;
+    let job: Job;
+    try {
+      job = repository.create({
+        id,
+        originalFilename: `YouTube ${videoId}`,
+        mediaType: 'application/x-youtube-url',
+        fileSizeBytes: 0,
+        sourcePath: sourceRelativePath(id),
+        sourceType: 'youtube',
+        sourceUrl: url,
+        language,
+        requestedOutputFormats: formats,
+        maxAttempts: config.jobMaxAttempts,
+        model: config.defaultModel,
+        origin: requestOrigin(request, config),
+        ...(idempotencyKeyHeader ? { idempotencyKey: idempotencyKeyHeader, requestHash: hash } : {}),
+      });
+    } catch (error) {
+      if (idempotencyKeyHeader) {
+        const existing = repository.findByIdempotencyKey(idempotencyKeyHeader);
+        if (existing?.requestHash === hash) {
+          return reply.code(200).send({
+            id: existing.id, origin: existing.origin, status: existing.status, phase: existing.phase, createdAt: existing.createdAt,
+            queuePosition: repository.queuePosition(existing.id),
+            links: { self: `/api/v1/jobs/${existing.id}`, results: `/api/v1/jobs/${existing.id}/results` },
+          });
+        }
+      }
+      throw error;
+    }
+    request.log.info({ jobId: job.id, status: job.status, sourceType: 'youtube' }, 'job queued');
+    return reply.code(202).send({
+      id: job.id, origin: job.origin, status: job.status, phase: job.phase, createdAt: job.createdAt,
+      queuePosition: repository.queuePosition(job.id),
+      links: { self: `/api/v1/jobs/${job.id}`, results: `/api/v1/jobs/${job.id}/results` },
+    });
   });
 
   app.get('/api/v1/jobs', {

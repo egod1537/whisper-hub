@@ -24,6 +24,8 @@ function rowToJob(row: Row): Job {
     status: row.status as JobStatus,
     phase: (row.phase as JobPhase | null) ?? null,
     origin: row.origin as Job['origin'],
+    sourceType: row.source_type as Job['sourceType'],
+    sourceUrl: row.source_url === null ? null : String(row.source_url),
     createdAt: String(row.created_at),
     queueEnteredAt: String(row.queue_entered_at),
     updatedAt: String(row.updated_at),
@@ -62,13 +64,15 @@ export class JobRepository {
     const timestamp = nowIso(now);
     this.db.prepare(`
       INSERT INTO jobs (
-        id, status, phase, origin, created_at, queue_entered_at, updated_at, original_filename, media_type,
+        id, status, phase, origin, source_type, source_url, created_at, queue_entered_at, updated_at, original_filename, media_type,
         file_size_bytes, source_path, language, requested_output_formats, provider,
         model, max_attempts, idempotency_key, request_hash
-      ) VALUES (?, 'queued', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'whisper_cpp', ?, ?, ?, ?)
+      ) VALUES (?, 'queued', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'whisper_cpp', ?, ?, ?, ?)
     `).run(
       input.id,
       input.origin,
+      input.sourceType ?? 'upload',
+      input.sourceUrl ?? null,
       timestamp,
       timestamp,
       timestamp,
@@ -147,7 +151,9 @@ export class JobRepository {
       if (!row) return null;
       const leaseExpiresAt = nowIso(new Date(now.getTime() + leaseSeconds * 1_000));
       const changed = this.db.prepare(`
-        UPDATE jobs SET status = 'processing', phase = 'validating', attempts = attempts + 1,
+        UPDATE jobs SET status = 'processing',
+          phase = CASE WHEN source_type = 'youtube' AND file_size_bytes = 0 THEN 'fetching' ELSE 'validating' END,
+          attempts = attempts + 1,
           started_at = COALESCE(started_at, ?), updated_at = ?, lease_owner = ?, lease_expires_at = ?,
           cancel_requested = 0, pause_requested = 0, next_attempt_at = NULL
         WHERE id = ? AND status = 'queued'
@@ -174,6 +180,18 @@ export class JobRepository {
       UPDATE jobs SET duration_seconds = ?, updated_at = ?
       WHERE id = ? AND status = 'processing' AND lease_owner = ? AND cancel_requested = 0 AND pause_requested = 0
     `).run(durationSeconds, nowIso(now), id, workerId).changes === 1;
+  }
+
+  updateSourceMetadata(id: string, leaseOwner: string, input: {
+    originalFilename: string;
+    mediaType: string;
+    fileSizeBytes: number;
+  }, now = new Date()): boolean {
+    return this.db.prepare(`
+      UPDATE jobs SET original_filename = ?, media_type = ?, file_size_bytes = ?, updated_at = ?
+      WHERE id = ? AND source_type = 'youtube' AND status = 'processing' AND lease_owner = ?
+        AND cancel_requested = 0 AND pause_requested = 0
+    `).run(input.originalFilename, input.mediaType, input.fileSizeBytes, nowIso(now), id, leaseOwner).changes === 1;
   }
 
   heartbeat(id: string, leaseOwner: string, leaseSeconds: number, now = new Date()): { renewed: boolean; cancelRequested: boolean; pauseRequested: boolean } {

@@ -32,6 +32,14 @@ export interface UploadRequest {
   signal?: AbortSignal;
 }
 
+export interface YoutubeJobRequest {
+  url: string;
+  language: Language;
+  formats: OutputFormat[];
+  idempotencyKey: string;
+  signal?: AbortSignal;
+}
+
 export interface DownloadedResult {
   blob: Blob;
   filename: string;
@@ -42,6 +50,7 @@ export interface WhisperApi {
   getJob(id: string, signal?: AbortSignal): Promise<JobDetail>;
   getSystemStatus(signal?: AbortSignal): Promise<SystemStatus>;
   createJob(request: UploadRequest): Promise<CreateJobResponse>;
+  createYoutubeJob(request: YoutubeJobRequest): Promise<CreateJobResponse>;
   createUpload(request: { filename: string; sizeBytes: number; mimeType?: string; language: Language; formats: OutputFormat[]; idempotencyKey: string; signal?: AbortSignal }): Promise<CreateUploadResponse>;
   getUpload(uploadId: string, signal?: AbortSignal): Promise<UploadStatusResponse>;
   putUploadPart(uploadId: string, index: number, chunk: Blob, sha256: string, signal?: AbortSignal): Promise<void>;
@@ -189,6 +198,15 @@ export class ApiClient implements WhisperApi {
       method: 'POST',
       headers: { 'Idempotency-Key': request.idempotencyKey },
       body,
+      signal: request.signal,
+    }));
+  }
+
+  async createYoutubeJob(request: YoutubeJobRequest): Promise<CreateJobResponse> {
+    return parseCreateJob(await this.json('/jobs/youtube', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': request.idempotencyKey },
+      body: JSON.stringify({ url: request.url, language: request.language, formats: request.formats }),
       signal: request.signal,
     }));
   }

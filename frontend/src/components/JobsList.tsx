@@ -10,7 +10,7 @@ const statusLabels: Record<JobStatus, string> = {
 };
 
 const phaseLabels: Record<JobPhase, string> = {
-  validating: '파일 확인', converting: '음성 변환', transcribing: '전사', exporting: '결과 생성',
+  fetching: 'YouTube 가져오기', validating: '파일 확인', converting: '음성 변환', transcribing: '전사', exporting: '결과 생성',
 };
 
 const statusIntent: Record<JobStatus, 'none' | 'primary' | 'success' | 'danger' | 'warning'> = {

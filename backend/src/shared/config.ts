@@ -28,6 +28,9 @@ const configSchema = z
     MAX_DURATION_SECONDS: z.coerce.number().positive().default(7_200),
     MAX_CONVERSION_SECONDS: z.coerce.number().int().positive().default(7_500),
     MAX_WAV_BYTES: z.coerce.number().int().positive().default(1_500_000_000),
+    YT_DLP_PATH: z.string().min(1).default('yt-dlp'),
+    YOUTUBE_METADATA_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+    YOUTUBE_DOWNLOAD_TIMEOUT_MS: z.coerce.number().int().positive().default(900_000),
     WORKER_POLL_MS: z.coerce.number().int().min(50).default(1_000),
     WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(8).default(1),
     JOB_LEASE_SECONDS: z.coerce.number().int().min(60).default(900),
@@ -76,6 +79,9 @@ export type Config = Readonly<{
   maxDurationSeconds: number;
   maxConversionSeconds: number;
   maxWavBytes: number;
+  ytDlpPath: string;
+  youtubeMetadataTimeoutMs: number;
+  youtubeDownloadTimeoutMs: number;
   workerPollMs: number;
   workerConcurrency: number;
   jobLeaseSeconds: number;
@@ -118,6 +124,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxDurationSeconds: parsed.MAX_DURATION_SECONDS,
     maxConversionSeconds: parsed.MAX_CONVERSION_SECONDS,
     maxWavBytes: parsed.MAX_WAV_BYTES,
+    ytDlpPath: parsed.YT_DLP_PATH,
+    youtubeMetadataTimeoutMs: parsed.YOUTUBE_METADATA_TIMEOUT_MS,
+    youtubeDownloadTimeoutMs: parsed.YOUTUBE_DOWNLOAD_TIMEOUT_MS,
     workerPollMs: parsed.WORKER_POLL_MS,
     workerConcurrency: parsed.WORKER_CONCURRENCY,
     jobLeaseSeconds: parsed.JOB_LEASE_SECONDS,

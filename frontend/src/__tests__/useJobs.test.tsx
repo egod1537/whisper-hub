@@ -19,7 +19,7 @@ function pollingApi(pages: JobSummary[][]): WhisperApi {
     listJobs,
     getSystemStatus: vi.fn().mockResolvedValue({ provider: { reachable: true, model: 'base' }, jobs: { queued: 0, processing: 0, paused: 0, origins: { web: 0, api: 0, unknown: 0 } }, worker: { fresh: true, lastHeartbeatAt: null }, uploads: { active: 0, stagedBytes: 0, finalizing: 0 } }),
     getJob: vi.fn().mockResolvedValue({ ...job('completed', '3'), startedAt: null, completedAt: null, fileSizeBytes: 1, durationSeconds: null, language: 'ko', formats: ['txt'] }),
-    createJob: vi.fn(), createUpload: vi.fn(), getUpload: vi.fn(), putUploadPart: vi.fn(), completeUpload: vi.fn(), abortUpload: vi.fn(),
+    createJob: vi.fn(), createYoutubeJob: vi.fn(), createUpload: vi.fn(), getUpload: vi.fn(), putUploadPart: vi.fn(), completeUpload: vi.fn(), abortUpload: vi.fn(),
     cancelJob: vi.fn(), pauseJob: vi.fn(), resumeJob: vi.fn(), retryJob: vi.fn(), getResults: vi.fn(), fetchResultText: vi.fn(), downloadResult: vi.fn(),
   };
 }

@@ -12,8 +12,9 @@ import { renderVtt } from '../shared/export/vtt.js';
 import type { TranscriptionProvider } from '../shared/providers/interface.js';
 import type { JobRepository } from '../shared/queue/repository.js';
 import type { Job, OutputFormat } from '../shared/queue/types.js';
-import { ensureStorage, removePath } from '../shared/storage/files.js';
+import { ensureStorage, moveUploadIntoPlace, removePath } from '../shared/storage/files.js';
 import { resolveInside, resultRelativePath, tempRelativePath } from '../shared/storage/paths.js';
+import type { YoutubeDownloader } from '../shared/youtube/downloader.js';
 import { convertToWav, probeDuration } from './media.js';
 
 const backoffSeconds = [10, 30, 60];
@@ -43,6 +44,7 @@ export class WorkerService {
     config: Config;
     repository: JobRepository;
     provider: TranscriptionProvider;
+    youtubeDownloader: YoutubeDownloader;
     workerId: string;
     logger: FastifyBaseLogger;
   }) {}
@@ -101,7 +103,7 @@ export class WorkerService {
   }
 
   private async process(job: Job, shutdownSignal: AbortSignal): Promise<void> {
-    const { config, repository, provider, workerId, logger } = this.dependencies;
+    const { config, repository, provider, youtubeDownloader, workerId, logger } = this.dependencies;
     const leaseOwner = job.leaseOwner;
     if (!leaseOwner) throw new AppError('WORKER_LEASE_LOST', 'Claimed job has no lease owner.', 503, true);
     const controller = new AbortController();
@@ -122,7 +124,22 @@ export class WorkerService {
       await removePath(workDir);
       await fs.promises.mkdir(workDir, { recursive: true, mode: 0o700 });
       this.throwIfInterrupted(job.id, leaseOwner, controller.signal);
+      let currentJob = job;
       const inputPath = resolveInside(config.dataDir, job.sourcePath);
+      if (job.sourceType === 'youtube' && job.fileSizeBytes === 0) {
+        if (!job.sourceUrl) throw new AppError('YOUTUBE_INVALID_URL', 'YouTube source URL is missing.', 422);
+        this.setPhase(job.id, leaseOwner, 'fetching');
+        const downloadedPath = path.join(workDir, 'youtube-source');
+        const downloaded = await youtubeDownloader.download(job.sourceUrl, downloadedPath, controller.signal);
+        this.throwIfInterrupted(job.id, leaseOwner, controller.signal);
+        await moveUploadIntoPlace(config.dataDir, downloadedPath, job.sourcePath);
+        if (!repository.updateSourceMetadata(job.id, leaseOwner, downloaded)) {
+          this.throwIfInterrupted(job.id, leaseOwner, controller.signal);
+          throw new AppError('WORKER_LEASE_LOST', 'Job is no longer owned by this worker.', 503, true);
+        }
+        currentJob = repository.getRequired(job.id);
+      }
+      this.setPhase(job.id, leaseOwner, 'validating');
       const duration = await probeDuration(inputPath, controller.signal);
       if (duration > config.maxDurationSeconds) {
         throw new AppError('DURATION_LIMIT_EXCEEDED', 'Media duration exceeds the configured limit.', 422);
@@ -136,15 +153,15 @@ export class WorkerService {
       });
       this.throwIfInterrupted(job.id, leaseOwner, controller.signal);
       this.setPhase(job.id, leaseOwner, 'transcribing');
-      const transcript = await provider.transcribe({ wavPath, language: job.language, signal: controller.signal });
-      if (transcript.text.length > 0 && transcript.segments.length === 0 && job.requestedOutputFormats.some((format) => format === 'srt' || format === 'vtt')) {
+      const transcript = await provider.transcribe({ wavPath, language: currentJob.language, signal: controller.signal });
+      if (transcript.text.length > 0 && transcript.segments.length === 0 && currentJob.requestedOutputFormats.some((format) => format === 'srt' || format === 'vtt')) {
         throw new AppError('FORMAT_UNSUPPORTED', 'Provider did not return timestamps required for subtitle output.', 422);
       }
       this.throwIfInterrupted(job.id, leaseOwner, controller.signal);
       this.setPhase(job.id, leaseOwner, 'exporting');
-      const published = await this.publish(job, leaseOwner, transcript);
+      const published = await this.publish(currentJob, leaseOwner, transcript);
       const completed = repository.complete(job.id, leaseOwner, published.relativePath, {
-        formats: job.requestedOutputFormats,
+        formats: currentJob.requestedOutputFormats,
         languageDetected: transcript.languageDetected ?? null,
         provider: provider.name,
       });

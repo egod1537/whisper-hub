@@ -60,6 +60,7 @@ button, input, select { font: inherit; }
 .counts, .privacy-note { margin: 0; color: #5f6b7c; font-size: 12px; }
 .auth-notice { margin-bottom: 16px; }
 .origin-filter { margin-bottom: 6px; }
+.source-selector { margin-bottom: 16px; }
 .origin-filter .bp6-button { white-space: normal; }
 .queue-note { margin: 0 0 12px; color: #738091; font-size: 11px; }
 

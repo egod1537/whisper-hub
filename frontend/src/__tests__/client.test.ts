@@ -61,6 +61,26 @@ describe('ApiClient', () => {
     expect((body.get('file') as File).name).toBe('speech.wav');
   });
 
+  it('queues a YouTube URL as JSON with an idempotency key', async () => {
+    let request: RequestInit | undefined;
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
+      request = init;
+      return json({
+        id: 'youtube-job', origin: 'web', status: 'queued', phase: null, createdAt: '2026-10-28T10:00:00Z', queuePosition: 1,
+        links: { self: '/api/v1/jobs/youtube-job', results: '/api/v1/jobs/youtube-job/results' },
+      }, 202);
+    });
+    const client = new ApiClient('', '/web-api/v1', fetcher);
+    await client.createYoutubeJob({
+      url: 'https://youtu.be/abc123xyz00', language: 'auto', formats: ['txt', 'srt'], idempotencyKey: 'youtube-key',
+    });
+
+    expect(fetcher.mock.calls[0]?.[0]).toBe('/web-api/v1/jobs/youtube');
+    expect(new Headers(request?.headers).get('content-type')).toBe('application/json');
+    expect(new Headers(request?.headers).get('idempotency-key')).toBe('youtube-key');
+    expect(JSON.parse(String(request?.body))).toEqual({ url: 'https://youtu.be/abc123xyz00', language: 'auto', formats: ['txt', 'srt'] });
+  });
+
   it('maps API errors without exposing raw server text', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json({
       error: { code: 'UNAUTHORIZED', message: 'internal detail', requestId: 'req-test' },

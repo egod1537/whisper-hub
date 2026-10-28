@@ -11,9 +11,12 @@ RUN pnpm --filter whisper-hub-backend deploy --prod --legacy /prod/backend
 
 FROM node:22-bookworm-slim AS runtime
 ENV NODE_ENV=production
+ADD --checksum=sha256:e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3 \
+  https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp /usr/local/bin/yt-dlp
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
+  && apt-get install -y --no-install-recommends ffmpeg ca-certificates python3 \
   && rm -rf /var/lib/apt/lists/* \
+  && chmod 0755 /usr/local/bin/yt-dlp \
   && mkdir -p /data /app/backend \
   && chown -R node:node /data /app
 WORKDIR /app/backend

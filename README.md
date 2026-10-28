@@ -98,6 +98,12 @@ The native setup uses the pinned official `whisper.cpp` tag `v1.9.5`, enables `G
      -F "language=ko" \
      -F "formats=txt,srt,json"
 
+   curl --fail-with-body -X POST http://127.0.0.1:3000/api/v1/jobs/youtube \
+     -H "Authorization: Bearer $API_KEY" \
+     -H "Content-Type: application/json" \
+     -H "Idempotency-Key: youtube-demo-001" \
+     --data '{"url":"https://www.youtube.com/watch?v=VIDEO_ID","language":"auto","formats":["txt","srt","json"]}'
+
    curl --fail-with-body http://127.0.0.1:3000/api/v1/jobs/JOB_ID \
      -H "Authorization: Bearer $API_KEY"
 
@@ -131,6 +137,7 @@ Then open <http://127.0.0.1:4173> on the client. Keep the terminal session open.
 All `/api/v1` routes and `/docs` require `Authorization: Bearer <API_KEY>`. Only `/health/live` and `/health/ready` are public and minimal. The generated contract is [backend/openapi.json](backend/openapi.json).
 
 - `POST /api/v1/jobs`: streaming multipart upload; fields are `file`, optional `language`, and optional comma-separated `formats`. `prompt` is rejected in the MVP.
+- `POST /api/v1/jobs/youtube`: queues one HTTPS YouTube video, Shorts, or completed Live URL without holding the request open for the download. The worker validates metadata, rejects active live streams and over-duration media, downloads only the best audio stream, then uses the same conversion/transcription pipeline. Playlist-only and non-YouTube URLs are rejected. The route is limited to ten submissions per hour per API process.
 - `POST /api/v1/uploads`: creates an idempotent resumable session. `PUT /uploads/:uploadId/parts/:index` accepts exact, SHA-256-protected binary chunks; `GET` is the authoritative resume state.
 - `POST /api/v1/uploads/:uploadId/complete`: changes the session to `finalizing` and returns `202`. The separate finalizer streams parts into one job source, then `GET /uploads/:uploadId` changes to `completed` with the one queue job ID.
 - `DELETE /api/v1/uploads/:uploadId`: aborts an incomplete session. A finalizing or completed session must be handled through its job instead.
@@ -149,7 +156,7 @@ The browser uses resumable uploads for every file. It measures progress only aft
 
 Direct bearer-authenticated uploads are classified `api`. First-party browser uploads, including resumable sessions finalized later, are classified `web` only when the API receives the separate server-side proxy token. Client fields and ordinary headers cannot choose the origin. Both origins always use one shared worker and the same FIFO; neither has priority. Historical rows migrated by `0003_job_origin_and_controls.sql` are conservatively classified `api`.
 
-The FIFO order is `(queue_entered_at, id)` among currently eligible queued jobs. Initial queue entry uses creation time; resume and manual retry receive a new queue-entry time. Paused jobs have no queue position and cannot be claimed. A retry waiting for backoff does not block later eligible jobs. Queue position is best-effort, 1-based, and can change; there is no ETA.
+The FIFO order is `(queue_entered_at, id)` among currently eligible queued jobs. Initial queue entry uses creation time; resume and manual retry receive a new queue-entry time. YouTube media is downloaded by the worker in the `fetching` phase, so it participates in the same FIFO and cooperative pause/cancel/retry behavior. Paused jobs have no queue position and cannot be claimed. A retry waiting for backoff does not block later eligible jobs. Queue position is best-effort, 1-based, and can change; there is no ETA.
 
 ## Worker and failure recovery
 
@@ -234,7 +241,7 @@ The backup is mandatory before an upgrade containing a database migration; do no
 
 `origin/main` is the production deployment source of truth. Do not build an operational image from a dirty worktree or another branch.
 
-The one-shot `migrate` service applies forward-only migrations before API, upload finalizer, and worker startup. Migration `0002_resumable_uploads.sql` adds persistent sessions, validated parts, and cross-process part claims. Migration `0003_job_origin_and_controls.sql` rebuilds the constrained job tables for provenance, queue-entry time, pausing/paused states, and fencing-compatible attempt outcomes, then adds origin to upload sessions. No reset is required. To update `whisper.cpp`, review the official release and server contract, update the pinned tag and model checksum in `scripts/setup-macos-whisper.sh`, rerun tests and the native E2E, then rebuild on the host. Do not silently track `master`.
+The one-shot `migrate` service applies forward-only migrations before API, upload finalizer, and worker startup. Migration `0002_resumable_uploads.sql` adds persistent sessions, validated parts, and cross-process part claims. Migration `0003_job_origin_and_controls.sql` rebuilds the constrained job tables for provenance, queue-entry time, pausing/paused states, and fencing-compatible attempt outcomes, then adds origin to upload sessions. Migration `0004_youtube_sources.sql` adds the constrained `youtube` source type and `fetching` phase while preserving existing upload jobs and attempts. No reset is required. To update `whisper.cpp`, review the official release and server contract, update the pinned tag and model checksum in `scripts/setup-macos-whisper.sh`, rerun tests and the native E2E, then rebuild on the host. Do not silently track `master`.
 
 ## API key rotation and network exposure
 
@@ -249,6 +256,8 @@ Existing direct API clients immediately lose access. The frontend proxy and API 
 The default API bind is `127.0.0.1`, not the LAN. Remote access requires an explicit authenticated TLS reverse proxy or a private network such as Tailscale. Do not change the Compose port to `0.0.0.0` without that layer. CORS is disabled unless exact `CORS_ORIGINS` are configured. Rate limiting is IP-based; when using a trusted reverse proxy, set `TRUST_PROXY=true` only after the proxy overwrites forwarding headers, or clients can spoof addresses. Rate limiting is process-local and is not a multi-host quota system.
 
 `whisper-server` is an unauthenticated trusted dependency. Keep 8080 out of public and LAN ingress. Test actual exposure from another device after firewall changes. Docker Desktop and the native server both need a post-reboot strategy; Docker Desktop login startup plus a reviewed `launchd` unit for `start-macos-whisper.sh` is an operational option, not installed automatically by this repository.
+
+The backend image pins the official platform-independent `yt-dlp` 2026.10.26 release by SHA-256 and supplies Python and ffmpeg in the container. URL validation accepts only canonical single-video IDs on the YouTube, YouTube Music, `youtu.be`, and YouTube No-Cookie hosts; subprocess arguments are passed without a shell, and downloader output paths are confined to the job staging directory. Defaults are a 60-second metadata timeout, 15-minute download timeout, `MAX_UPLOAD_BYTES` downloaded-file ceiling, and the shared `MAX_DURATION_SECONDS` media ceiling. Override the timeouts with `YOUTUBE_METADATA_TIMEOUT_MS` and `YOUTUBE_DOWNLOAD_TIMEOUT_MS`; `YT_DLP_PATH` is intended for development/testing only. Private, age-restricted, members-only, or otherwise inaccessible videos fail without cookies. Operators are responsible for downloading only content they are authorized to process and for complying with YouTube's terms and applicable law.
 
 ## Development and verification
 

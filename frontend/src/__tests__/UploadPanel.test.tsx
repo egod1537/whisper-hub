@@ -16,7 +16,7 @@ function resumableApi(overrides: Partial<WhisperApi> = {}): WhisperApi {
     createUpload: vi.fn().mockResolvedValue({ uploadId: 'upload-1', chunkSizeBytes: 5, totalChunks: 1, expiresAt: uploadStatus.expiresAt, status: 'uploading' }),
     getUpload: vi.fn().mockResolvedValueOnce(uploadStatus).mockResolvedValue({ ...uploadStatus, status: 'completed', receivedParts: [0], receivedBytes: 5, jobId: 'job-1' }),
     putUploadPart: vi.fn().mockResolvedValue(undefined), completeUpload: vi.fn().mockResolvedValue({ uploadId: 'upload-1', status: 'completed', jobId: 'job-1', jobUrl: '/api/v1/jobs/job-1' }),
-    abortUpload: vi.fn().mockResolvedValue(undefined), getJob: vi.fn().mockResolvedValue(detail), createJob: vi.fn(), listJobs: vi.fn(),
+    abortUpload: vi.fn().mockResolvedValue(undefined), getJob: vi.fn().mockResolvedValue(detail), createJob: vi.fn(), createYoutubeJob: vi.fn(), listJobs: vi.fn(),
     getSystemStatus: vi.fn(), cancelJob: vi.fn(), pauseJob: vi.fn(), resumeJob: vi.fn(), retryJob: vi.fn(), getResults: vi.fn(), fetchResultText: vi.fn(), downloadResult: vi.fn(),
     ...overrides,
   };
@@ -51,6 +51,26 @@ describe('UploadPanel', () => {
     expect(api.putUploadPart).toHaveBeenCalledOnce();
     expect(screen.getByText('작업이 대기열에 등록되었습니다.')).toBeInTheDocument();
     expect(localStorage.length).toBe(0);
+  });
+
+  it('queues a YouTube link with the selected options', async () => {
+    const user = userEvent.setup();
+    const api = resumableApi({ createYoutubeJob: vi.fn().mockResolvedValue({
+      id: 'youtube-job', origin: 'web', status: 'queued', phase: null, createdAt: '2026-10-28T10:00:00Z', queuePosition: 1,
+      links: { self: '/api/v1/jobs/youtube-job', results: '/api/v1/jobs/youtube-job/results' },
+    }) });
+    const onCreated = vi.fn();
+    render(<UploadPanel api={api} onCreated={onCreated} />);
+    await user.click(screen.getByRole('button', { name: 'YouTube 링크' }));
+    await user.type(screen.getByLabelText('YouTube 영상 링크'), 'https://youtu.be/abc123xyz00');
+    await user.selectOptions(screen.getByLabelText('언어'), 'ko');
+    await user.click(screen.getByRole('button', { name: '전사 시작' }));
+
+    await waitFor(() => expect(api.createYoutubeJob).toHaveBeenCalledWith(expect.objectContaining({
+      url: 'https://youtu.be/abc123xyz00', language: 'ko', formats: ['txt'],
+    })));
+    expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 'youtube-job' }), 'YouTube 영상');
+    expect(screen.getByText('작업이 대기열에 등록되었습니다.')).toBeInTheDocument();
   });
 
   it('prevents a double submit while a chunk is pending', async () => {

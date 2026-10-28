@@ -30,11 +30,12 @@ it('upgrades an existing v2 database without losing jobs, attempts, or upload se
 
     migrate(db);
 
-    expect(db.prepare('SELECT origin,source_type,source_url,queue_entered_at,pause_requested FROM jobs WHERE id=?').get('historical')).toEqual({
+    expect(db.prepare('SELECT origin,source_type,source_url,queue_entered_at,pause_requested,progress_current,progress_total,progress_unit FROM jobs WHERE id=?').get('historical')).toEqual({
       origin: 'api', source_type: 'upload', source_url: null, queue_entered_at: '2026-10-28T00:00:00.000Z', pause_requested: 0,
+      progress_current: null, progress_total: null, progress_unit: null,
     });
     expect(db.prepare('SELECT outcome,worker_id FROM job_attempts WHERE job_id=?').get('historical')).toEqual({ outcome: 'retrying', worker_id: 'old-worker' });
-    expect(db.prepare('SELECT origin FROM upload_sessions WHERE id=?').get('old-upload')).toEqual({ origin: 'api' });
+    expect(db.prepare('SELECT origin,assembled_bytes FROM upload_sessions WHERE id=?').get('old-upload')).toEqual({ origin: 'api', assembled_bytes: 0 });
     expect(db.pragma('foreign_key_check')).toEqual([]);
   } finally {
     db.close();

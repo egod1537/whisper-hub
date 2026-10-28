@@ -21,6 +21,7 @@ export interface UploadSession {
   jobId: string | null;
   finalizeOwner: string | null;
   finalizeLeaseExpiresAt: string | null;
+  assembledBytes: number;
   errorCode: string | null;
   errorMessage: string | null;
 }
@@ -42,6 +43,7 @@ export interface UploadStatusView {
   totalChunks: number;
   receivedParts: number[];
   receivedBytes: number;
+  assembledBytes: number;
   expiresAt: string;
   jobId: string | null;
   error: { code: string; message: string } | null;

@@ -1,8 +1,8 @@
 import {
-  Alert, Button, ButtonGroup, Callout, Card, NonIdealState, OverlayToaster, Position, Spinner, Tag, type Toaster,
+  Alert, Button, ButtonGroup, Callout, Card, NonIdealState, OverlayToaster, Position, ProgressBar, Spinner, Tag, type Toaster,
 } from '@blueprintjs/core';
 import { useState } from 'react';
-import type { JobDetail, JobOrigin, JobPhase, JobStatus, JobSummary, SystemStatus } from '../api/types';
+import type { JobDetail, JobOrigin, JobPhase, JobProgress, JobStatus, JobSummary, SystemStatus } from '../api/types';
 
 const statusLabels: Record<JobStatus, string> = {
   queued: '대기 중', processing: '처리 중', pausing: '일시 중지 중', paused: '일시 중지됨',
@@ -36,6 +36,16 @@ function createdTime(value: string): string {
 
 function languageLabel(value: string): string {
   return { auto: '자동', ko: '한국어', ja: '일본어', en: '영어' }[value] ?? value;
+}
+
+function progressLabel(progress: JobProgress): string {
+  const percent = Number.isInteger(progress.percent) ? progress.percent.toFixed(0) : progress.percent.toFixed(1);
+  if (progress.unit === 'bytes') {
+    const format = (bytes: number) => bytes < 1_048_576 ? `${(bytes / 1_024).toFixed(1)} KiB` : `${(bytes / 1_048_576).toFixed(1)} MiB`;
+    return `${percent}% · ${format(progress.current)} / ${format(progress.total)}`;
+  }
+  const format = (seconds: number) => `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`;
+  return `${percent}% · ${format(progress.current)} / ${format(progress.total)}`;
 }
 
 export type OriginFilter = JobOrigin | 'all';
@@ -132,6 +142,12 @@ export function JobsList(props: JobsListProps) {
                     <span>{createdTime(job.createdAt)}</span>
                     {job.queuePosition !== null && <span>대기 #{job.queuePosition}</span>}
                   </span>
+                  {job.progress && (
+                    <span className="job-progress" aria-label={`${phaseLabels[job.phase ?? 'validating']} 진행률 ${job.progress.percent}%`}>
+                      <ProgressBar value={job.progress.percent / 100} animate={false} stripes={false} />
+                      <span>{progressLabel(job.progress)}</span>
+                    </span>
+                  )}
                   {job.error && <span className="job-error">{job.error.message}</span>}
                 </button>
                 <div className="job-actions">

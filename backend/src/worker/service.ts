@@ -130,7 +130,9 @@ export class WorkerService {
         if (!job.sourceUrl) throw new AppError('YOUTUBE_INVALID_URL', 'YouTube source URL is missing.', 422);
         this.setPhase(job.id, leaseOwner, 'fetching');
         const downloadedPath = path.join(workDir, 'youtube-source');
-        const downloaded = await youtubeDownloader.download(job.sourceUrl, downloadedPath, controller.signal);
+        const downloaded = await youtubeDownloader.download(job.sourceUrl, downloadedPath, controller.signal, (current, total) => {
+          repository.updateProgress(job.id, leaseOwner, 'fetching', current, total, 'bytes');
+        });
         this.throwIfInterrupted(job.id, leaseOwner, controller.signal);
         await moveUploadIntoPlace(config.dataDir, downloadedPath, job.sourcePath);
         if (!repository.updateSourceMetadata(job.id, leaseOwner, downloaded)) {
@@ -146,10 +148,15 @@ export class WorkerService {
       }
       repository.setDuration(job.id, leaseOwner, duration);
       this.setPhase(job.id, leaseOwner, 'converting');
+      repository.updateProgress(job.id, leaseOwner, 'converting', 0, duration, 'seconds');
       await convertToWav(inputPath, wavPath, {
         signal: controller.signal,
         timeoutMs: config.maxConversionSeconds * 1_000,
         maxOutputBytes: config.maxWavBytes,
+        durationSeconds: duration,
+        onProgress: (current, total) => {
+          repository.updateProgress(job.id, leaseOwner, 'converting', current, total, 'seconds');
+        },
       });
       this.throwIfInterrupted(job.id, leaseOwner, controller.signal);
       this.setPhase(job.id, leaseOwner, 'transcribing');

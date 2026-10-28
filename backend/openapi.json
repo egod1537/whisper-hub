@@ -774,6 +774,40 @@
                               "exporting"
                             ]
                           },
+                          "progress": {
+                            "nullable": true,
+                            "type": "object",
+                            "properties": {
+                              "current": {
+                                "type": "number",
+                                "minimum": 0
+                              },
+                              "total": {
+                                "type": "number",
+                                "minimum": 0,
+                                "exclusiveMinimum": true
+                              },
+                              "unit": {
+                                "type": "string",
+                                "enum": [
+                                  "bytes",
+                                  "seconds"
+                                ]
+                              },
+                              "percent": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 100
+                              }
+                            },
+                            "required": [
+                              "current",
+                              "total",
+                              "unit",
+                              "percent"
+                            ],
+                            "additionalProperties": false
+                          },
                           "createdAt": {
                             "type": "string",
                             "format": "date-time",
@@ -822,6 +856,7 @@
                           "origin",
                           "status",
                           "phase",
+                          "progress",
                           "createdAt",
                           "updatedAt",
                           "originalFilename",
@@ -1291,6 +1326,40 @@
                         "exporting"
                       ]
                     },
+                    "progress": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "current": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "total": {
+                          "type": "number",
+                          "minimum": 0,
+                          "exclusiveMinimum": true
+                        },
+                        "unit": {
+                          "type": "string",
+                          "enum": [
+                            "bytes",
+                            "seconds"
+                          ]
+                        },
+                        "percent": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "current",
+                        "total",
+                        "unit",
+                        "percent"
+                      ],
+                      "additionalProperties": false
+                    },
                     "createdAt": {
                       "type": "string",
                       "format": "date-time",
@@ -1376,6 +1445,7 @@
                     "origin",
                     "status",
                     "phase",
+                    "progress",
                     "createdAt",
                     "updatedAt",
                     "startedAt",
@@ -1494,6 +1564,40 @@
                         "exporting"
                       ]
                     },
+                    "progress": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "current": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "total": {
+                          "type": "number",
+                          "minimum": 0,
+                          "exclusiveMinimum": true
+                        },
+                        "unit": {
+                          "type": "string",
+                          "enum": [
+                            "bytes",
+                            "seconds"
+                          ]
+                        },
+                        "percent": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "current",
+                        "total",
+                        "unit",
+                        "percent"
+                      ],
+                      "additionalProperties": false
+                    },
                     "createdAt": {
                       "type": "string",
                       "format": "date-time",
@@ -1542,6 +1646,7 @@
                     "origin",
                     "status",
                     "phase",
+                    "progress",
                     "createdAt",
                     "updatedAt",
                     "originalFilename",
@@ -1696,6 +1801,40 @@
                         "exporting"
                       ]
                     },
+                    "progress": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "current": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "total": {
+                          "type": "number",
+                          "minimum": 0,
+                          "exclusiveMinimum": true
+                        },
+                        "unit": {
+                          "type": "string",
+                          "enum": [
+                            "bytes",
+                            "seconds"
+                          ]
+                        },
+                        "percent": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "current",
+                        "total",
+                        "unit",
+                        "percent"
+                      ],
+                      "additionalProperties": false
+                    },
                     "createdAt": {
                       "type": "string",
                       "format": "date-time",
@@ -1744,6 +1883,7 @@
                     "origin",
                     "status",
                     "phase",
+                    "progress",
                     "createdAt",
                     "updatedAt",
                     "originalFilename",
@@ -1898,6 +2038,40 @@
                         "exporting"
                       ]
                     },
+                    "progress": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "current": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "total": {
+                          "type": "number",
+                          "minimum": 0,
+                          "exclusiveMinimum": true
+                        },
+                        "unit": {
+                          "type": "string",
+                          "enum": [
+                            "bytes",
+                            "seconds"
+                          ]
+                        },
+                        "percent": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "current",
+                        "total",
+                        "unit",
+                        "percent"
+                      ],
+                      "additionalProperties": false
+                    },
                     "createdAt": {
                       "type": "string",
                       "format": "date-time",
@@ -1946,6 +2120,7 @@
                     "origin",
                     "status",
                     "phase",
+                    "progress",
                     "createdAt",
                     "updatedAt",
                     "originalFilename",
@@ -2100,6 +2275,40 @@
                         "exporting"
                       ]
                     },
+                    "progress": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "current": {
+                          "type": "number",
+                          "minimum": 0
+                        },
+                        "total": {
+                          "type": "number",
+                          "minimum": 0,
+                          "exclusiveMinimum": true
+                        },
+                        "unit": {
+                          "type": "string",
+                          "enum": [
+                            "bytes",
+                            "seconds"
+                          ]
+                        },
+                        "percent": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "current",
+                        "total",
+                        "unit",
+                        "percent"
+                      ],
+                      "additionalProperties": false
+                    },
                     "createdAt": {
                       "type": "string",
                       "format": "date-time",
@@ -2148,6 +2357,7 @@
                     "origin",
                     "status",
                     "phase",
+                    "progress",
                     "createdAt",
                     "updatedAt",
                     "originalFilename",
@@ -3495,6 +3705,11 @@
                       "minimum": 0,
                       "maximum": 9007199254740991
                     },
+                    "assembledBytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time",
@@ -3530,6 +3745,7 @@
                     "totalChunks",
                     "receivedParts",
                     "receivedBytes",
+                    "assembledBytes",
                     "expiresAt",
                     "jobId",
                     "error"

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { SqliteDatabase } from '../db/connection.js';
 import { AppError } from '../errors.js';
-import type { CreateJobInput, Job, JobPhase, JobStatus, ListJobsInput } from './types.js';
+import type { CreateJobInput, Job, JobPhase, JobProgressUnit, JobStatus, ListJobsInput } from './types.js';
 
 type Row = Record<string, string | number | bigint | Buffer | null>;
 
@@ -26,6 +26,9 @@ function rowToJob(row: Row): Job {
     origin: row.origin as Job['origin'],
     sourceType: row.source_type as Job['sourceType'],
     sourceUrl: row.source_url === null ? null : String(row.source_url),
+    progressCurrent: row.progress_current === null ? null : Number(row.progress_current),
+    progressTotal: row.progress_total === null ? null : Number(row.progress_total),
+    progressUnit: row.progress_unit === null ? null : row.progress_unit as JobProgressUnit,
     createdAt: String(row.created_at),
     queueEnteredAt: String(row.queue_entered_at),
     updatedAt: String(row.updated_at),
@@ -153,6 +156,7 @@ export class JobRepository {
       const changed = this.db.prepare(`
         UPDATE jobs SET status = 'processing',
           phase = CASE WHEN source_type = 'youtube' AND file_size_bytes = 0 THEN 'fetching' ELSE 'validating' END,
+          progress_current = NULL, progress_total = NULL, progress_unit = NULL,
           attempts = attempts + 1,
           started_at = COALESCE(started_at, ?), updated_at = ?, lease_owner = ?, lease_expires_at = ?,
           cancel_requested = 0, pause_requested = 0, next_attempt_at = NULL
@@ -170,9 +174,19 @@ export class JobRepository {
 
   updatePhase(id: string, workerId: string, phase: JobPhase, now = new Date()): boolean {
     return this.db.prepare(`
-      UPDATE jobs SET phase = ?, updated_at = ?
+      UPDATE jobs SET phase = ?, progress_current = NULL, progress_total = NULL, progress_unit = NULL, updated_at = ?
       WHERE id = ? AND status = 'processing' AND lease_owner = ? AND cancel_requested = 0 AND pause_requested = 0
     `).run(phase, nowIso(now), id, workerId).changes === 1;
+  }
+
+  updateProgress(id: string, leaseOwner: string, phase: JobPhase, current: number, total: number, unit: JobProgressUnit, now = new Date()): boolean {
+    if (!Number.isFinite(current) || !Number.isFinite(total) || current < 0 || total <= 0) return false;
+    const boundedCurrent = Math.min(current, total);
+    return this.db.prepare(`
+      UPDATE jobs SET progress_current = ?, progress_total = ?, progress_unit = ?, updated_at = ?
+      WHERE id = ? AND status = 'processing' AND phase = ? AND lease_owner = ?
+        AND cancel_requested = 0 AND pause_requested = 0
+    `).run(boundedCurrent, total, unit, nowIso(now), id, phase, leaseOwner).changes === 1;
   }
 
   setDuration(id: string, workerId: string, durationSeconds: number, now = new Date()): boolean {
@@ -226,6 +240,7 @@ export class JobRepository {
       if (job.status === 'queued' || job.status === 'paused') {
         this.db.prepare(`
           UPDATE jobs SET status = 'canceled', phase = NULL, cancel_requested = 1, pause_requested = 0,
+            progress_current = NULL, progress_total = NULL, progress_unit = NULL,
             completed_at = ?, updated_at = ?, lease_owner = NULL, lease_expires_at = NULL, next_attempt_at = NULL
           WHERE id = ? AND status IN ('queued', 'paused')
         `).run(timestamp, timestamp, id);
@@ -244,7 +259,8 @@ export class JobRepository {
       const timestamp = nowIso(now);
       if (job.status === 'paused' || job.status === 'pausing') return job;
       if (job.status === 'queued') {
-        const changed = this.db.prepare(`UPDATE jobs SET status='paused',phase=NULL,pause_requested=0,updated_at=?,next_attempt_at=NULL
+        const changed = this.db.prepare(`UPDATE jobs SET status='paused',phase=NULL,progress_current=NULL,progress_total=NULL,progress_unit=NULL,
+          pause_requested=0,updated_at=?,next_attempt_at=NULL
           WHERE id=? AND status='queued'`).run(timestamp, id);
         if (changed.changes !== 1) throw new AppError('JOB_NOT_PAUSABLE', 'This job cannot be paused.', 409);
       } else if (job.status === 'processing') {
@@ -264,6 +280,7 @@ export class JobRepository {
       if (job.status !== 'paused') throw new AppError('JOB_NOT_RESUMABLE', 'This job cannot be resumed.', 409);
       const timestamp = nowIso(now);
       const changed = this.db.prepare(`UPDATE jobs SET status='queued',phase=NULL,queue_entered_at=?,updated_at=?,
+        progress_current=NULL,progress_total=NULL,progress_unit=NULL,
         cancel_requested=0,pause_requested=0,error_code=NULL,error_message=NULL,next_attempt_at=NULL
         WHERE id=? AND status='paused'`).run(timestamp, timestamp, id);
       if (changed.changes !== 1) throw new AppError('JOB_NOT_RESUMABLE', 'This job cannot be resumed.', 409);
@@ -275,6 +292,7 @@ export class JobRepository {
     const timestamp = nowIso(now);
     const changed = this.db.prepare(`
       UPDATE jobs SET status = 'canceled', phase = NULL, completed_at = ?, updated_at = ?,
+        progress_current = NULL, progress_total = NULL, progress_unit = NULL,
         lease_owner = NULL, lease_expires_at = NULL, pause_requested = 0, error_code = NULL, error_message = NULL
       WHERE id = ? AND status IN ('processing', 'pausing') AND lease_owner = ?
     `).run(timestamp, timestamp, id, leaseOwner);
@@ -286,6 +304,7 @@ export class JobRepository {
     const timestamp = nowIso(now);
     const changed = this.db.prepare(`
       UPDATE jobs SET status='paused',phase=NULL,updated_at=?,lease_owner=NULL,lease_expires_at=NULL,
+        progress_current=NULL,progress_total=NULL,progress_unit=NULL,
         pause_requested=0,cancel_requested=0,error_code=NULL,error_message=NULL,next_attempt_at=NULL,
         attempts=MAX(attempts - 1, 0)
       WHERE id=? AND status='pausing' AND lease_owner=? AND cancel_requested=0
@@ -298,6 +317,7 @@ export class JobRepository {
     const timestamp = nowIso(now);
     const changed = this.db.prepare(`
       UPDATE jobs SET status = 'completed', phase = NULL, completed_at = ?, updated_at = ?,
+        progress_current = NULL, progress_total = NULL, progress_unit = NULL,
         lease_owner = NULL, lease_expires_at = NULL, result_base_path = ?, result_metadata_json = ?,
         error_code = NULL, error_message = NULL
       WHERE id = ? AND status = 'processing' AND lease_owner = ? AND cancel_requested = 0 AND pause_requested = 0
@@ -319,14 +339,16 @@ export class JobRepository {
         const next = nowIso(new Date(now.getTime() + backoffSeconds * 1_000));
         this.db.prepare(`
           UPDATE jobs SET status = 'queued', phase = NULL, updated_at = ?, lease_owner = NULL,
-            lease_expires_at = NULL, error_code = ?, error_message = ?, next_attempt_at = ?
+            lease_expires_at = NULL, progress_current = NULL, progress_total = NULL, progress_unit = NULL,
+            error_code = ?, error_message = ?, next_attempt_at = ?
           WHERE id = ? AND status = 'processing' AND lease_owner = ?
         `).run(timestamp, code, message, next, id, leaseOwner);
         this.finishAttempt(id, 'retrying', code, message, timestamp);
       } else {
         this.db.prepare(`
           UPDATE jobs SET status = 'failed', phase = NULL, completed_at = ?, updated_at = ?,
-            lease_owner = NULL, lease_expires_at = NULL, error_code = ?, error_message = ?
+            lease_owner = NULL, lease_expires_at = NULL, progress_current = NULL, progress_total = NULL, progress_unit = NULL,
+            error_code = ?, error_message = ?
           WHERE id = ? AND status = 'processing' AND lease_owner = ?
         `).run(timestamp, timestamp, code, message, id, leaseOwner);
         this.finishAttempt(id, 'failed', code, message, timestamp);
@@ -344,6 +366,7 @@ export class JobRepository {
       const changed = this.db.prepare(`
         UPDATE jobs SET status = 'queued', phase = NULL, queue_entered_at = ?, updated_at = ?, completed_at = NULL,
           attempts = 0, max_attempts = ?, lease_owner = NULL, lease_expires_at = NULL,
+          progress_current = NULL, progress_total = NULL, progress_unit = NULL,
           cancel_requested = 0, pause_requested = 0, error_code = NULL, error_message = NULL, next_attempt_at = NULL,
           manual_retry_count = manual_retry_count + 1
         WHERE id = ? AND status = 'failed'
@@ -362,20 +385,23 @@ export class JobRepository {
       for (const job of expired) {
         if (job.cancelRequested) {
           this.db.prepare(`
-            UPDATE jobs SET status = 'canceled', phase = NULL, completed_at = ?, updated_at = ?, lease_owner = NULL, lease_expires_at = NULL
+            UPDATE jobs SET status = 'canceled', phase = NULL, completed_at = ?, updated_at = ?, lease_owner = NULL, lease_expires_at = NULL,
+              progress_current = NULL, progress_total = NULL, progress_unit = NULL
             WHERE id = ? AND status IN ('processing', 'pausing')
           `).run(timestamp, timestamp, job.id);
           this.finishAttempt(job.id, 'canceled', null, null, timestamp);
         } else if (job.pauseRequested || job.status === 'pausing') {
           this.db.prepare(`
             UPDATE jobs SET status='paused',phase=NULL,updated_at=?,lease_owner=NULL,lease_expires_at=NULL,
-              pause_requested=0,cancel_requested=0,attempts=MAX(attempts - 1, 0)
+              pause_requested=0,cancel_requested=0,attempts=MAX(attempts - 1, 0),
+              progress_current=NULL,progress_total=NULL,progress_unit=NULL
             WHERE id=? AND status='pausing'
           `).run(timestamp, job.id);
           this.finishAttempt(job.id, 'paused', null, null, timestamp);
         } else if (job.attempts < job.maxAttempts) {
           this.db.prepare(`
             UPDATE jobs SET status = 'queued', phase = NULL, updated_at = ?, lease_owner = NULL, lease_expires_at = NULL,
+              progress_current = NULL, progress_total = NULL, progress_unit = NULL,
               error_code = 'WORKER_LEASE_EXPIRED', error_message = 'Worker stopped before the job finished.', next_attempt_at = ?
             WHERE id = ? AND status = 'processing'
           `).run(timestamp, timestamp, job.id);
@@ -383,6 +409,7 @@ export class JobRepository {
         } else {
           this.db.prepare(`
             UPDATE jobs SET status = 'failed', phase = NULL, completed_at = ?, updated_at = ?, lease_owner = NULL, lease_expires_at = NULL,
+              progress_current = NULL, progress_total = NULL, progress_unit = NULL,
               error_code = 'WORKER_LEASE_EXPIRED', error_message = 'Worker stopped before the job finished.'
             WHERE id = ? AND status = 'processing'
           `).run(timestamp, timestamp, job.id);

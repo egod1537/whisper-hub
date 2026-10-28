@@ -8,7 +8,7 @@ import type { JobDetail, JobStatus, JobSummary } from '../api/types';
 
 function summary(status: JobStatus, id: string = status): JobSummary {
   return {
-    id, origin: 'web', status, phase: status === 'processing' ? 'transcribing' : null,
+    id, origin: 'web', status, phase: status === 'processing' ? 'transcribing' : null, progress: null,
     createdAt: '2026-10-28T10:00:00Z', updatedAt: '2026-10-28T10:00:00Z', originalFilename: `${id}.wav`,
     attempts: status === 'failed' ? 1 : 0, queuePosition: status === 'queued' ? 1 : null,
     error: status === 'failed' ? { code: 'PROVIDER_UNAVAILABLE', message: '제공자를 사용할 수 없습니다.' } : null,
@@ -91,6 +91,21 @@ describe('job actions and results', () => {
     />);
     expect(screen.getByRole('button', { name: /일시 중지$/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /취소$/ })).toBeDisabled();
+  });
+
+  it('shows measured conversion progress with elapsed and total media time', () => {
+    const converting: JobSummary = {
+      ...summary('processing'), phase: 'converting', progress: { current: 30, total: 120, unit: 'seconds', percent: 25 },
+    };
+    render(<JobsList
+      jobs={[converting]} selectedId={null} selectedJob={null} originFilter="web" systemStatus={null}
+      loading={false} stale={false} error={null} nextCursor={null} pendingActionIds={new Set()}
+      onOriginFilter={vi.fn()} onSelect={vi.fn()} onRefresh={vi.fn()} onLoadMore={vi.fn()}
+      onCancel={vi.fn()} onPause={vi.fn()} onResume={vi.fn()} onRetry={vi.fn()}
+    />);
+
+    expect(screen.getByText('25% · 0:30 / 2:00')).toBeInTheDocument();
+    expect(screen.getByLabelText('음성 변환 진행률 25%')).toBeInTheDocument();
   });
 
   it('does not request a TXT preview when TXT was not produced', async () => {

@@ -16,6 +16,7 @@ function rowToSession(row: Row): UploadSession {
     expiresAt: String(row.expires_at), jobId: row.job_id === null ? null : String(row.job_id),
     finalizeOwner: row.finalize_owner === null ? null : String(row.finalize_owner),
     finalizeLeaseExpiresAt: row.finalize_lease_expires_at === null ? null : String(row.finalize_lease_expires_at),
+    assembledBytes: Number(row.assembled_bytes),
     errorCode: row.error_code === null ? null : String(row.error_code),
     errorMessage: row.error_message === null ? null : String(row.error_message),
   };
@@ -86,6 +87,7 @@ export class UploadRepository {
       uploadId: id, status: session.status, sizeBytes: session.totalSizeBytes, chunkSizeBytes: session.chunkSizeBytes,
       totalChunks: session.totalChunks, receivedParts: parts.map((part) => part.index),
       receivedBytes: parts.reduce((sum, part) => sum + part.bytes, 0), expiresAt: session.expiresAt,
+      assembledBytes: session.status === 'completed' ? session.totalSizeBytes : session.assembledBytes,
       jobId: session.status === 'completed' ? session.jobId : null,
       error: session.errorCode ? { code: session.errorCode, message: session.errorMessage ?? 'Upload failed.' } : null,
     };
@@ -154,7 +156,7 @@ export class UploadRepository {
       if (missing.length > 0 || bytes !== session.totalSizeBytes) {
         throw new AppError('INCOMPLETE_UPLOAD', 'Upload is missing one or more chunks.', 409, false, undefined, { missingParts: missing.slice(0, 200) });
       }
-      const changed = this.db.prepare(`UPDATE upload_sessions SET status='finalizing',job_id=?,updated_at=?,error_code=NULL,error_message=NULL
+      const changed = this.db.prepare(`UPDATE upload_sessions SET status='finalizing',job_id=?,assembled_bytes=0,updated_at=?,error_code=NULL,error_message=NULL
         WHERE id=? AND status='uploading'`).run(jobId, nowIso(now), uploadId);
       if (changed.changes !== 1) return this.getRequired(uploadId);
       return this.getRequired(uploadId);
@@ -179,7 +181,7 @@ export class UploadRepository {
       const row = this.db.prepare(`SELECT id FROM upload_sessions WHERE status='finalizing'
         AND (finalize_lease_expires_at IS NULL OR finalize_lease_expires_at <= ?) ORDER BY updated_at,id LIMIT 1`).get(timestamp) as { id: string } | undefined;
       if (!row) return null;
-      const changed = this.db.prepare(`UPDATE upload_sessions SET finalize_owner=?,finalize_lease_expires_at=?,updated_at=?
+      const changed = this.db.prepare(`UPDATE upload_sessions SET finalize_owner=?,finalize_lease_expires_at=?,assembled_bytes=0,updated_at=?
         WHERE id=? AND status='finalizing' AND (finalize_lease_expires_at IS NULL OR finalize_lease_expires_at <= ?)`)
         .run(owner, nowIso(new Date(now.getTime() + leaseSeconds * 1_000)), timestamp, row.id, timestamp);
       return changed.changes === 1 ? this.getRequired(row.id) : null;
@@ -189,6 +191,13 @@ export class UploadRepository {
   renewFinalization(id: string, owner: string, leaseSeconds: number, now = new Date()): boolean {
     return this.db.prepare(`UPDATE upload_sessions SET finalize_lease_expires_at=?,updated_at=? WHERE id=? AND status='finalizing' AND finalize_owner=?`)
       .run(nowIso(new Date(now.getTime() + leaseSeconds * 1_000)), nowIso(now), id, owner).changes === 1;
+  }
+
+  updateFinalizationProgress(id: string, owner: string, assembledBytes: number, leaseSeconds: number, now = new Date()): boolean {
+    if (!Number.isSafeInteger(assembledBytes) || assembledBytes < 0) return false;
+    return this.db.prepare(`UPDATE upload_sessions SET assembled_bytes=MIN(?,total_size_bytes),finalize_lease_expires_at=?,updated_at=?
+      WHERE id=? AND status='finalizing' AND finalize_owner=?`)
+      .run(assembledBytes, nowIso(new Date(now.getTime() + leaseSeconds * 1_000)), nowIso(now), id, owner).changes === 1;
   }
 
   completeFinalization(input: { uploadId: string; owner: string; computedSha256: string; sourcePath: string; maxAttempts: number; model: string }, now = new Date()): UploadSession {
@@ -203,7 +212,7 @@ export class UploadRepository {
       ) VALUES (?, 'queued', NULL, ?, ?, ?, ?, ?, 'application/octet-stream', ?, ?, ?, ?, 'whisper_cpp', ?, ?)`)
         .run(session.jobId, session.origin, timestamp, timestamp, timestamp, session.displayFilename, session.totalSizeBytes, input.sourcePath, session.language,
           JSON.stringify(session.formats), input.model, input.maxAttempts);
-      const changed = this.db.prepare(`UPDATE upload_sessions SET status='completed',computed_sha256=?,updated_at=?,finalize_owner=NULL,
+      const changed = this.db.prepare(`UPDATE upload_sessions SET status='completed',computed_sha256=?,assembled_bytes=total_size_bytes,updated_at=?,finalize_owner=NULL,
         finalize_lease_expires_at=NULL,error_code=NULL,error_message=NULL WHERE id=? AND status='finalizing' AND finalize_owner=?`)
         .run(input.computedSha256, timestamp, input.uploadId, input.owner);
       if (changed.changes !== 1) throw new AppError('UPLOAD_STATE_CONFLICT', 'Finalization lease was lost.', 409, true);

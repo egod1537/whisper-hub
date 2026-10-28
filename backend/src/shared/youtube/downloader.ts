@@ -14,7 +14,7 @@ export interface YoutubeDownloadResult {
 }
 
 export interface YoutubeDownloader {
-  download(url: string, destinationPath: string, signal: AbortSignal): Promise<YoutubeDownloadResult>;
+  download(url: string, destinationPath: string, signal: AbortSignal, onProgress?: (currentBytes: number, totalBytes: number) => void): Promise<YoutubeDownloadResult>;
 }
 
 export function normalizeYoutubeUrl(value: string): string {
@@ -70,7 +70,7 @@ function commandFailure(stderr: string): AppError {
   return new AppError('YOUTUBE_DOWNLOAD_FAILED', 'YouTube 오디오를 가져오지 못했습니다.', 503, true);
 }
 
-async function runCommand(executable: string, args: string[], timeoutMs: number, signal: AbortSignal): Promise<CommandResult> {
+async function runCommand(executable: string, args: string[], timeoutMs: number, signal: AbortSignal, onStdoutLine?: (line: string) => void): Promise<CommandResult> {
   if (signal.aborted) throw new AppError('CANCELED', 'Operation canceled.');
   return new Promise((resolve, reject) => {
     let stdout = '';
@@ -78,6 +78,7 @@ async function runCommand(executable: string, args: string[], timeoutMs: number,
     let settled = false;
     let timedOut = false;
     let outputExceeded = false;
+    let stdoutLineBuffer = '';
     const child = spawn(executable, args, { stdio: ['ignore', 'pipe', 'pipe'] });
     const finish = (error?: Error, result?: CommandResult) => {
       if (settled) return;
@@ -98,6 +99,12 @@ async function runCommand(executable: string, args: string[], timeoutMs: number,
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
       stdout += chunk;
+      if (onStdoutLine) {
+        stdoutLineBuffer += chunk;
+        const lines = stdoutLineBuffer.split(/\r?\n/);
+        stdoutLineBuffer = lines.pop() ?? '';
+        for (const line of lines) onStdoutLine(line);
+      }
       if (Buffer.byteLength(stdout) > MAX_COMMAND_OUTPUT_BYTES) {
         outputExceeded = true;
         child.kill('SIGTERM');
@@ -115,6 +122,7 @@ async function runCommand(executable: string, args: string[], timeoutMs: number,
       else finish(new AppError('YOUTUBE_DOWNLOAD_FAILED', 'YouTube downloader could not start.', 503, true));
     });
     child.once('close', (code) => {
+      if (stdoutLineBuffer && onStdoutLine) onStdoutLine(stdoutLineBuffer);
       if (signal.aborted) return finish(new AppError('CANCELED', 'Operation canceled.'));
       if (timedOut) return finish(new AppError('YOUTUBE_TIMEOUT', 'YouTube 다운로드 시간이 초과되었습니다.', 504, true));
       if (outputExceeded) return finish(new AppError('YOUTUBE_DOWNLOAD_FAILED', 'YouTube downloader returned too much output.', 502, true));
@@ -127,7 +135,7 @@ async function runCommand(executable: string, args: string[], timeoutMs: number,
 export class YtDlpYoutubeDownloader implements YoutubeDownloader {
   constructor(private readonly config: Config) {}
 
-  async download(url: string, destinationPath: string, signal: AbortSignal): Promise<YoutubeDownloadResult> {
+  async download(url: string, destinationPath: string, signal: AbortSignal, onProgress?: (currentBytes: number, totalBytes: number) => void): Promise<YoutubeDownloadResult> {
     const normalizedUrl = normalizeYoutubeUrl(url);
     const common = ['--ignore-config', '--no-playlist', '--quiet', '--no-warnings', '--socket-timeout', '30'];
     const metadata = await runCommand(this.config.ytDlpPath, [
@@ -152,12 +160,24 @@ export class YtDlpYoutubeDownloader implements YoutubeDownloader {
       ...common,
       '--retries', '3',
       '--fragment-retries', '3',
+      '--progress',
+      '--newline',
+      '--progress-delta', '0.5',
+      '--progress-template', 'download:progress:%(progress.downloaded_bytes)s:%(progress.total_bytes)s:%(progress.total_bytes_estimate)s',
       '--format', 'bestaudio/best',
       '--max-filesize', String(this.config.maxUploadBytes),
       '--output', outputTemplate,
       '--print', 'after_move:filepath',
       normalizedUrl,
-    ], this.config.youtubeDownloadTimeoutMs, signal);
+    ], this.config.youtubeDownloadTimeoutMs, signal, (line) => {
+      if (!line.startsWith('progress:')) return;
+      const [, downloadedValue, totalValue, estimateValue] = line.split(':');
+      const current = Number(downloadedValue);
+      const exactTotal = Number(totalValue);
+      const estimatedTotal = Number(estimateValue);
+      const total = Number.isFinite(exactTotal) && exactTotal > 0 ? exactTotal : estimatedTotal;
+      if (Number.isFinite(current) && current >= 0 && Number.isFinite(total) && total > 0) onProgress?.(current, total);
+    });
     const candidate = downloaded.stdout.trim().split(/\r?\n/).filter(Boolean).at(-1);
     if (!candidate) throw new AppError('YOUTUBE_DOWNLOAD_FAILED', '다운로드된 YouTube 오디오를 찾지 못했습니다.', 502, true);
     const resolvedCandidate = path.resolve(candidate);

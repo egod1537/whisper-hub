@@ -12,6 +12,7 @@ async function runProcess(command: string, args: string[], options: {
   timeoutMs: number;
   outputPath?: string;
   maxOutputBytes?: number;
+  onStdoutLine?(line: string): void;
 }): Promise<ProcessResult> {
   const timeout = AbortSignal.timeout(options.timeoutMs);
   const combinedSignal = AbortSignal.any([options.signal, timeout]);
@@ -21,10 +22,17 @@ async function runProcess(command: string, args: string[], options: {
     const stderr: Buffer[] = [];
     let stdoutSize = 0;
     let stderrSize = 0;
+    let stdoutLineBuffer = '';
     let limitExceeded = false;
     child.stdout.on('data', (chunk: Buffer) => {
       stdoutSize += chunk.length;
       if (stdoutSize <= 1024 * 1024) stdout.push(chunk);
+      if (options.onStdoutLine) {
+        stdoutLineBuffer += chunk.toString('utf8');
+        const lines = stdoutLineBuffer.split(/\r?\n/);
+        stdoutLineBuffer = lines.pop() ?? '';
+        for (const line of lines) options.onStdoutLine(line);
+      }
     });
     child.stderr.on('data', (chunk: Buffer) => {
       stderrSize += chunk.length;
@@ -50,6 +58,7 @@ async function runProcess(command: string, args: string[], options: {
     });
     child.on('close', (code) => {
       if (monitor) clearInterval(monitor);
+      if (stdoutLineBuffer && options.onStdoutLine) options.onStdoutLine(stdoutLineBuffer);
       if (limitExceeded) {
         reject(new AppError('CONVERSION_FAILED', 'Converted media exceeded the safe output limit.', 422));
       } else if (options.signal.aborted) {
@@ -89,11 +98,32 @@ export async function convertToWav(inputPath: string, outputPath: string, option
   signal: AbortSignal;
   timeoutMs: number;
   maxOutputBytes: number;
+  durationSeconds: number;
+  onProgress?(currentSeconds: number, totalSeconds: number): void;
 }): Promise<void> {
+  let currentSeconds = 0;
   await runProcess('ffmpeg', [
-    '-nostdin', '-v', 'error', '-i', inputPath, '-map', '0:a:0',
+    '-nostdin', '-v', 'error', '-nostats', '-stats_period', '0.5', '-progress', 'pipe:1', '-i', inputPath, '-map', '0:a:0',
     '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-y', outputPath,
-  ], { ...options, outputPath });
+  ], {
+    ...options,
+    outputPath,
+    onStdoutLine: (line) => {
+      const separator = line.indexOf('=');
+      if (separator < 1) return;
+      const key = line.slice(0, separator);
+      const value = line.slice(separator + 1);
+      if (key === 'out_time_us') {
+        const parsed = Number(value) / 1_000_000;
+        if (Number.isFinite(parsed) && parsed >= currentSeconds) {
+          currentSeconds = Math.min(parsed, options.durationSeconds);
+          options.onProgress?.(currentSeconds, options.durationSeconds);
+        }
+      } else if (key === 'progress' && value === 'end') {
+        options.onProgress?.(options.durationSeconds, options.durationSeconds);
+      }
+    },
+  });
   const stat = await fs.promises.stat(outputPath).catch(() => null);
   if (!stat || stat.size <= 44 || stat.size > options.maxOutputBytes) {
     throw new AppError('CONVERSION_FAILED', 'Media conversion produced an invalid output.', 422);

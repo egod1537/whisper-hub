@@ -94,10 +94,11 @@ export async function uploadResumably(api: WhisperApi, file: File, language: Lan
     const completing = await api.completeUpload(uploadId, options.signal);
     if (completing.status === 'completed' && completing.jobId) status = await api.getUpload(uploadId, options.signal);
   }
-  options.onProgress?.(file.size, file.size, 'finalizing');
+  options.onProgress?.(status.assembledBytes, file.size, 'finalizing');
   while (status.status !== 'completed') {
     await wait(1_000, options.signal);
     status = await api.getUpload(uploadId, options.signal);
+    options.onProgress?.(status.status === 'completed' ? file.size : status.assembledBytes, file.size, 'finalizing');
     if (status.status === 'expired' || status.status === 'aborted') throw new Error(status.error?.message ?? '업로드 조립에 실패했습니다.');
   }
   if (!status.jobId) throw new Error('완료된 업로드에 작업 ID가 없습니다.');

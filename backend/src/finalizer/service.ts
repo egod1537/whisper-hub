@@ -48,6 +48,9 @@ export class UploadFinalizerService {
         throw new AppError('INCOMPLETE_UPLOAD', 'Assembled upload has an invalid size.', 422);
       }
       finalHash = existing.sha256;
+      if (!repository.updateFinalizationProgress(session.id, owner, session.totalSizeBytes, config.uploadFinalizerLeaseSeconds)) {
+        throw new AppError('UPLOAD_STATE_CONFLICT', 'Finalization lease was lost.', 409, true);
+      }
     } else {
       const parts = repository.parts(session.id);
       if (parts.length !== session.totalChunks) throw new AppError('INCOMPLETE_UPLOAD', 'Validated upload parts are missing.', 409);
@@ -72,7 +75,9 @@ export class UploadFinalizerService {
             await output.write(chunk);
           }
           if (partBytes !== part.bytes || partHash.digest('hex') !== part.sha256) throw new AppError('CHUNK_HASH_MISMATCH', 'A stored upload chunk failed verification.', 422);
-          if (!repository.renewFinalization(session.id, owner, config.uploadFinalizerLeaseSeconds)) throw new AppError('UPLOAD_STATE_CONFLICT', 'Finalization lease was lost.', 409, true);
+          if (!repository.updateFinalizationProgress(session.id, owner, wholeBytes, config.uploadFinalizerLeaseSeconds)) {
+            throw new AppError('UPLOAD_STATE_CONFLICT', 'Finalization lease was lost.', 409, true);
+          }
         }
         if (wholeBytes !== session.totalSizeBytes) throw new AppError('INCOMPLETE_UPLOAD', 'Assembled upload has an invalid size.', 422);
         finalHash = wholeHash.digest('hex');

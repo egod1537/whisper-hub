@@ -6,7 +6,7 @@ import { pollDelayForFailure, useJobs } from '../hooks/useJobs';
 
 function job(status: JobStatus, updatedAt: string): JobSummary {
   return {
-    id: 'job-1', origin: 'web', status, phase: status === 'processing' ? 'transcribing' : null,
+    id: 'job-1', origin: 'web', status, phase: status === 'processing' ? 'transcribing' : null, progress: null,
     createdAt: '2026-10-28T10:00:00Z', updatedAt, originalFilename: 'speech.wav', attempts: 1,
     queuePosition: status === 'queued' ? 1 : null, error: status === 'failed' ? { code: 'FAILED', message: '실패' } : null,
   };

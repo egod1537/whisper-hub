@@ -5,16 +5,16 @@ import type { WhisperApi } from '../api/client';
 import { UploadPanel } from '../components/UploadPanel';
 
 const detail = {
-  id: 'job-1', origin: 'web' as const, status: 'queued' as const, phase: null, createdAt: '2026-10-28T10:00:00Z', updatedAt: '2026-10-28T10:00:00Z',
+  id: 'job-1', origin: 'web' as const, status: 'queued' as const, phase: null, progress: null, createdAt: '2026-10-28T10:00:00Z', updatedAt: '2026-10-28T10:00:00Z',
   originalFilename: 'speech.wav', attempts: 0, queuePosition: 1, error: null, startedAt: null, completedAt: null,
   fileSizeBytes: 5, durationSeconds: null, language: 'auto', formats: ['txt' as const],
 };
 
 function resumableApi(overrides: Partial<WhisperApi> = {}): WhisperApi {
-  const uploadStatus = { uploadId: 'upload-1', status: 'uploading' as const, sizeBytes: 5, chunkSizeBytes: 5, totalChunks: 1, receivedParts: [], receivedBytes: 0, expiresAt: '2026-10-29T10:00:00Z', jobId: null, error: null };
+  const uploadStatus = { uploadId: 'upload-1', status: 'uploading' as const, sizeBytes: 5, chunkSizeBytes: 5, totalChunks: 1, receivedParts: [], receivedBytes: 0, assembledBytes: 0, expiresAt: '2026-10-29T10:00:00Z', jobId: null, error: null };
   return {
     createUpload: vi.fn().mockResolvedValue({ uploadId: 'upload-1', chunkSizeBytes: 5, totalChunks: 1, expiresAt: uploadStatus.expiresAt, status: 'uploading' }),
-    getUpload: vi.fn().mockResolvedValueOnce(uploadStatus).mockResolvedValue({ ...uploadStatus, status: 'completed', receivedParts: [0], receivedBytes: 5, jobId: 'job-1' }),
+    getUpload: vi.fn().mockResolvedValueOnce(uploadStatus).mockResolvedValue({ ...uploadStatus, status: 'completed', receivedParts: [0], receivedBytes: 5, assembledBytes: 5, jobId: 'job-1' }),
     putUploadPart: vi.fn().mockResolvedValue(undefined), completeUpload: vi.fn().mockResolvedValue({ uploadId: 'upload-1', status: 'completed', jobId: 'job-1', jobUrl: '/api/v1/jobs/job-1' }),
     abortUpload: vi.fn().mockResolvedValue(undefined), getJob: vi.fn().mockResolvedValue(detail), createJob: vi.fn(), createYoutubeJob: vi.fn(), listJobs: vi.fn(),
     getSystemStatus: vi.fn(), cancelJob: vi.fn(), pauseJob: vi.fn(), resumeJob: vi.fn(), retryJob: vi.fn(), getResults: vi.fn(), fetchResultText: vi.fn(), downloadResult: vi.fn(),

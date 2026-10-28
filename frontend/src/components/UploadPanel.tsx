@@ -84,7 +84,7 @@ export function UploadPanel({ api, disabled = false, onCreated }: UploadPanelPro
           },
           onProgress: (completed, total, phase) => {
             setProgress(total === 0 ? 0 : completed / total);
-            setMessage(phase === 'finalizing' ? '업로드 완료 · 서버에서 파일을 조립하고 있습니다.' : `${formatBytes(completed)} / ${formatBytes(total)} 업로드 완료`);
+            setMessage(phase === 'finalizing' ? `${formatBytes(completed)} / ${formatBytes(total)} 서버 조립 중` : `${formatBytes(completed)} / ${formatBytes(total)} 업로드 완료`);
           },
         });
         onCreated(created, selectedFile.name); setFile(null); if (inputRef.current) inputRef.current.value = '';

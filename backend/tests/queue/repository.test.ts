@@ -59,6 +59,22 @@ describe('durable queue', () => {
     expect(repository.claim('worker', 60, new Date(now.getTime() + 10_000))?.id).toBe('two');
   });
 
+  it('stores only fenced progress for the active phase and clears it on phase changes', () => {
+    const now = new Date('2026-10-28T00:00:00.000Z');
+    add('progress', now);
+    const claimed = repository.claim('worker', 60, now)!;
+
+    expect(repository.updateProgress(claimed.id, 'stale-owner', 'validating', 5, 10, 'seconds', now)).toBe(false);
+    expect(repository.updateProgress(claimed.id, claimed.leaseOwner!, 'validating', -1, 10, 'seconds', now)).toBe(false);
+    expect(repository.updateProgress(claimed.id, claimed.leaseOwner!, 'validating', 12, 10, 'seconds', now)).toBe(true);
+    expect(repository.getRequired(claimed.id)).toMatchObject({ progressCurrent: 10, progressTotal: 10, progressUnit: 'seconds' });
+
+    expect(repository.updatePhase(claimed.id, claimed.leaseOwner!, 'converting', now)).toBe(true);
+    expect(repository.getRequired(claimed.id)).toMatchObject({ progressCurrent: null, progressTotal: null, progressUnit: null });
+    expect(repository.updateProgress(claimed.id, claimed.leaseOwner!, 'validating', 1, 10, 'seconds', now)).toBe(false);
+    expect(repository.updateProgress(claimed.id, claimed.leaseOwner!, 'converting', 2.5, 10, 'seconds', now)).toBe(true);
+  });
+
   it('enforces cancellation and manual retry transition rules', () => {
     const now = new Date('2026-10-28T00:00:00.000Z');
     add('queued', now); add('failed', new Date(now.getTime() + 1), 1);

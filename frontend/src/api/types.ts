@@ -16,11 +16,19 @@ export interface JobError {
   message: string;
 }
 
+export interface JobProgress {
+  current: number;
+  total: number;
+  unit: 'bytes' | 'seconds';
+  percent: number;
+}
+
 export interface JobSummary {
   id: string;
   origin: JobOrigin;
   status: JobStatus;
   phase: JobPhase | null;
+  progress: JobProgress | null;
   createdAt: string;
   updatedAt: string;
   originalFilename: string;
@@ -84,6 +92,7 @@ export interface UploadStatusResponse {
   totalChunks: number;
   receivedParts: number[];
   receivedBytes: number;
+  assembledBytes: number;
   expiresAt: string;
   jobId: string | null;
   error: JobError | null;
@@ -149,6 +158,14 @@ function jobError(value: unknown): JobError | null {
   return { code: string(item.code), message: string(item.message) };
 }
 
+function jobProgress(value: unknown): JobProgress | null {
+  if (value === null) return null;
+  const item = record(value);
+  return {
+    current: number(item.current), total: number(item.total), unit: enumValue(item.unit, ['bytes', 'seconds'] as const), percent: number(item.percent),
+  };
+}
+
 export function parseJobSummary(value: unknown): JobSummary {
   const item = record(value);
   return {
@@ -156,6 +173,7 @@ export function parseJobSummary(value: unknown): JobSummary {
     origin: enumValue(item.origin, jobOrigins),
     status: enumValue(item.status, jobStatuses),
     phase: nullableEnum(item.phase, jobPhases),
+    progress: jobProgress(item.progress),
     createdAt: string(item.createdAt),
     updatedAt: string(item.updatedAt),
     originalFilename: string(item.originalFilename),
@@ -246,7 +264,7 @@ export function parseUploadStatus(value: unknown): UploadStatusResponse {
   return {
     uploadId: string(item.uploadId), status: enumValue(item.status, uploadStatuses), sizeBytes: number(item.sizeBytes),
     chunkSizeBytes: number(item.chunkSizeBytes), totalChunks: number(item.totalChunks),
-    receivedParts: item.receivedParts.map(number), receivedBytes: number(item.receivedBytes), expiresAt: string(item.expiresAt),
+    receivedParts: item.receivedParts.map(number), receivedBytes: number(item.receivedBytes), assembledBytes: number(item.assembledBytes), expiresAt: string(item.expiresAt),
     jobId: nullableString(item.jobId), error: jobError(item.error),
   };
 }

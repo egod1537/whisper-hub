@@ -6,6 +6,8 @@ export const jobPhases = ['fetching', 'validating', 'converting', 'transcribing'
 export type JobPhase = (typeof jobPhases)[number];
 export const jobSourceTypes = ['upload', 'youtube'] as const;
 export type JobSourceType = (typeof jobSourceTypes)[number];
+export const jobProgressUnits = ['bytes', 'seconds'] as const;
+export type JobProgressUnit = (typeof jobProgressUnits)[number];
 export const outputFormats = ['txt', 'srt', 'vtt', 'json'] as const;
 export type OutputFormat = (typeof outputFormats)[number];
 
@@ -16,6 +18,9 @@ export interface Job {
   origin: JobOrigin;
   sourceType: JobSourceType;
   sourceUrl: string | null;
+  progressCurrent: number | null;
+  progressTotal: number | null;
+  progressUnit: JobProgressUnit | null;
   createdAt: string;
   queueEnteredAt: string;
   updatedAt: string;

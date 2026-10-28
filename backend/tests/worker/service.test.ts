@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import pino from 'pino';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../../src/shared/errors.js';
 import { WorkerService } from '../../src/worker/service.js';
 import { resolveInside, sourceRelativePath } from '../../src/shared/storage/paths.js';
@@ -35,6 +35,7 @@ function worker(youtubeDownloader: YoutubeDownloader = { async download() { thro
 describe('worker', () => {
   it('validates, converts, transcribes, and atomically publishes all outputs', async () => {
     createJob('job-complete');
+    const updateProgress = vi.spyOn(context.repository, 'updateProgress');
     expect(await worker().runOnce()).toBe(true);
     const completed = context.repository.getRequired('job-complete');
     expect(completed.status).toBe('completed');
@@ -42,6 +43,8 @@ describe('worker', () => {
     for (const format of completed.requestedOutputFormats) {
       expect(fs.existsSync(resolveInside(context.directory, `${completed.resultBasePath}/transcript.${format}`))).toBe(true);
     }
+    expect(updateProgress).toHaveBeenCalledWith('job-complete', expect.any(String), 'converting', 0, expect.any(Number), 'seconds');
+    expect(updateProgress).toHaveBeenCalledWith('job-complete', expect.any(String), 'converting', expect.any(Number), expect.any(Number), 'seconds');
   });
 
   it('fails invalid media without retrying', async () => {
@@ -58,14 +61,17 @@ describe('worker', () => {
       language: 'auto', requestedOutputFormats: ['txt'], maxAttempts: 3, model: 'base', origin: 'web',
     });
     const downloader: YoutubeDownloader = {
-      async download(_url, destinationPath) {
+      async download(_url, destinationPath, _signal, onProgress) {
+        onProgress?.(25, 100);
         const data = makeWav();
         fs.writeFileSync(destinationPath, data);
         return { originalFilename: '테스트 영상.webm', mediaType: 'audio/webm', fileSizeBytes: data.length };
       },
     };
 
+    const updateProgress = vi.spyOn(context.repository, 'updateProgress');
     expect(await worker(downloader).runOnce()).toBe(true);
+    expect(updateProgress).toHaveBeenCalledWith(id, expect.any(String), 'fetching', 25, 100, 'bytes');
     expect(context.repository.getRequired(id)).toMatchObject({
       status: 'completed', originalFilename: '테스트 영상.webm', mediaType: 'audio/webm', sourceType: 'youtube',
     });

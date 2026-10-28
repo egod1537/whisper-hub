@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import { jobOrigins, jobPhases, jobStatuses, outputFormats } from '../shared/queue/types.js';
 
+const jobProgressSchema = z.object({
+  current: z.number().nonnegative(), total: z.number().positive(), unit: z.enum(['bytes', 'seconds']),
+  percent: z.number().min(0).max(100),
+});
+
 export const errorResponseSchema = z.object({
   error: z.object({
     code: z.string(),
@@ -15,6 +20,7 @@ export const jobSummarySchema = z.object({
   origin: z.enum(jobOrigins),
   status: z.enum(jobStatuses),
   phase: z.enum(jobPhases).nullable(),
+  progress: jobProgressSchema.nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
   originalFilename: z.string(),
@@ -28,6 +34,7 @@ export const jobDetailSchema = z.object({
   origin: z.enum(jobOrigins),
   status: z.enum(jobStatuses),
   phase: z.enum(jobPhases).nullable(),
+  progress: jobProgressSchema.nullable(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
   startedAt: z.iso.datetime().nullable(),
@@ -98,7 +105,7 @@ export const uploadPartParamsSchema = uploadParamsSchema.extend({ index: z.coerc
 export const uploadStatusSchema = z.object({
   uploadId: z.string(), status: z.enum(['uploading', 'finalizing', 'completed', 'expired', 'aborted']),
   sizeBytes: z.number().int().positive(), chunkSizeBytes: z.number().int().positive(), totalChunks: z.number().int().positive(),
-  receivedParts: z.array(z.number().int().nonnegative()), receivedBytes: z.number().int().nonnegative(), expiresAt: z.iso.datetime(),
+  receivedParts: z.array(z.number().int().nonnegative()), receivedBytes: z.number().int().nonnegative(), assembledBytes: z.number().int().nonnegative(), expiresAt: z.iso.datetime(),
   jobId: z.string().nullable(), error: z.object({ code: z.string(), message: z.string() }).nullable(),
 });
 

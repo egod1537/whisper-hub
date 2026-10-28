@@ -183,6 +183,7 @@ export function useJobs(api: WhisperApi | null, onUnauthorized: () => void, orig
       origin: job.origin,
       status: job.status,
       phase: job.phase,
+      progress: null,
       createdAt: job.createdAt,
       updatedAt: job.createdAt,
       originalFilename,

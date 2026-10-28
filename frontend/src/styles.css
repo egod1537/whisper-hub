@@ -210,6 +210,18 @@ button, input, select { font: inherit; }
   overflow-wrap: anywhere;
 }
 
+.job-progress {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+  color: #5f6b7c;
+  font-size: 11px;
+}
+
+.job-progress .bp6-progress-bar { margin: 0; }
+
 .job-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; padding-right: 6px; }
 .transcript-panel { margin-top: 16px; }
 .result-actions { margin-bottom: 12px; }

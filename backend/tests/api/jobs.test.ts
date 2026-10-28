@@ -38,6 +38,22 @@ describe('jobs API', () => {
     expect(detail.json()).toMatchObject({ id: created.id, origin: 'api', language: 'ko', formats: ['txt', 'srt', 'json'] });
   });
 
+  it('returns measured progress for active download or conversion phases only', async () => {
+    const created = (await upload()).json();
+    const claimed = context.repository.claim('progress-worker', 60)!;
+    expect(context.repository.updatePhase(claimed.id, claimed.leaseOwner!, 'converting')).toBe(true);
+    expect(context.repository.updateProgress(claimed.id, claimed.leaseOwner!, 'converting', 2.55, 10, 'seconds')).toBe(true);
+
+    const detail = await context.app.inject({ method: 'GET', url: created.links.self, headers: authHeaders });
+    expect(detail.json().progress).toEqual({ current: 2.55, total: 10, unit: 'seconds', percent: 25.5 });
+    const list = await context.app.inject({ method: 'GET', url: '/api/v1/jobs', headers: authHeaders });
+    expect(list.json().items[0].progress).toEqual({ current: 2.55, total: 10, unit: 'seconds', percent: 25.5 });
+
+    expect(context.repository.updatePhase(claimed.id, claimed.leaseOwner!, 'transcribing')).toBe(true);
+    const transcribing = await context.app.inject({ method: 'GET', url: created.links.self, headers: authHeaders });
+    expect(transcribing.json().progress).toBeNull();
+  });
+
   it('honors idempotency and rejects mismatches', async () => {
     const first = await upload([], { ...webHeaders, 'idempotency-key': 'same-key' });
     const second = await upload([], { 'idempotency-key': 'same-key' });

@@ -3,8 +3,8 @@ import { ApiClient } from '../api/client';
 import { ContractError } from '../api/types';
 
 const summary = {
-  id: 'job-1', origin: 'api', status: 'queued', phase: null, createdAt: '2026-10-28T10:00:00Z', updatedAt: '2026-10-28T10:00:00Z',
-  originalFilename: 'sample.wav', attempts: 0, queuePosition: 1, error: null,
+  id: 'job-1', origin: 'api', status: 'processing', phase: 'converting', progress: { current: 30, total: 120, unit: 'seconds', percent: 25 }, createdAt: '2026-10-28T10:00:00Z', updatedAt: '2026-10-28T10:00:00Z',
+  originalFilename: 'sample.wav', attempts: 0, queuePosition: null, error: null,
 };
 
 function json(value: unknown, status = 200): Response {
@@ -33,6 +33,7 @@ describe('ApiClient', () => {
     const page = await client.listJobs({ limit: 25 });
 
     expect(page.items[0]?.originalFilename).toBe('sample.wav');
+    expect(page.items[0]?.progress).toEqual({ current: 30, total: 120, unit: 'seconds', percent: 25 });
     expect(fetcher).toHaveBeenCalledOnce();
     const [url, init] = fetcher.mock.calls[0]!;
     expect(url).toBe('/api/v1/jobs?limit=25');

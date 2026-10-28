@@ -136,6 +136,24 @@ Then open <http://127.0.0.1:4173> on the client. Keep the terminal session open.
 
 All `/api/v1` routes and `/docs` require `Authorization: Bearer <API_KEY>`. Only `/health/live` and `/health/ready` are public and minimal. The generated contract is [backend/openapi.json](backend/openapi.json).
 
+For the deployed service, open <https://api-whisper.mangagaki.net/docs> and use **Authorize** with the bearer token. The OpenAPI server is relative to the current host, so Swagger's **Try it out** calls the same deployment that served the documentation.
+
+For files that may exceed an edge proxy's single-request limit, use the resumable CLI instead of the legacy multipart endpoint. It requires only Node.js 22, sends server-defined 20 MiB chunks with up to three concurrent requests, retries transient failures, and resumes an interrupted upload from the parts already accepted by the server:
+
+```sh
+set -a
+. ./.env
+set +a
+
+WHISPER_HUB_URL=https://api-whisper.mangagaki.net \
+WHISPER_HUB_API_KEY="$API_KEY" \
+node scripts/upload-resumable.mjs /absolute/path/to/video.mp4 \
+  --language ko \
+  --formats txt,srt,json
+```
+
+Progress is written to stderr and the queued `jobId`, status, queue position, and authenticated job URL are emitted as JSON on stdout. Keep the API key in the environment rather than a command-line argument. Repeating the same command resumes the stable session; after a session has expired or been aborted, pass a new `--idempotency-key`.
+
 - `POST /api/v1/jobs`: streaming multipart upload; fields are `file`, optional `language`, and optional comma-separated `formats`. `prompt` is rejected in the MVP.
 - `POST /api/v1/jobs/youtube`: queues one HTTPS YouTube video, Shorts, or completed Live URL without holding the request open for the download. The worker validates metadata, rejects active live streams and over-duration media, downloads only the best audio stream, then uses the same conversion/transcription pipeline. Playlist-only and non-YouTube URLs are rejected. The route is limited to ten submissions per hour per API process.
 - `POST /api/v1/uploads`: creates an idempotent resumable session. `PUT /uploads/:uploadId/parts/:index` accepts exact, SHA-256-protected binary chunks; `GET` is the authoritative resume state.

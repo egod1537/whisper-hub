@@ -240,11 +240,21 @@
                     "id": {
                       "type": "string"
                     },
+                    "origin": {
+                      "type": "string",
+                      "enum": [
+                        "web",
+                        "api",
+                        "unknown"
+                      ]
+                    },
                     "status": {
                       "type": "string",
                       "enum": [
                         "queued",
                         "processing",
+                        "pausing",
+                        "paused",
                         "completed",
                         "failed",
                         "canceled"
@@ -291,6 +301,7 @@
                   },
                   "required": [
                     "id",
+                    "origin",
                     "status",
                     "phase",
                     "createdAt",
@@ -312,11 +323,21 @@
                     "id": {
                       "type": "string"
                     },
+                    "origin": {
+                      "type": "string",
+                      "enum": [
+                        "web",
+                        "api",
+                        "unknown"
+                      ]
+                    },
                     "status": {
                       "type": "string",
                       "enum": [
                         "queued",
                         "processing",
+                        "pausing",
+                        "paused",
                         "completed",
                         "failed",
                         "canceled"
@@ -363,6 +384,7 @@
                   },
                   "required": [
                     "id",
+                    "origin",
                     "status",
                     "phase",
                     "createdAt",
@@ -658,6 +680,8 @@
               "enum": [
                 "queued",
                 "processing",
+                "pausing",
+                "paused",
                 "completed",
                 "failed",
                 "canceled"
@@ -665,6 +689,19 @@
             },
             "in": "query",
             "name": "status",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "web",
+                "api",
+                "unknown"
+              ]
+            },
+            "in": "query",
+            "name": "origin",
             "required": false
           },
           {
@@ -704,11 +741,21 @@
                           "id": {
                             "type": "string"
                           },
+                          "origin": {
+                            "type": "string",
+                            "enum": [
+                              "web",
+                              "api",
+                              "unknown"
+                            ]
+                          },
                           "status": {
                             "type": "string",
                             "enum": [
                               "queued",
                               "processing",
+                              "pausing",
+                              "paused",
                               "completed",
                               "failed",
                               "canceled"
@@ -769,6 +816,7 @@
                         },
                         "required": [
                           "id",
+                          "origin",
                           "status",
                           "phase",
                           "createdAt",
@@ -826,11 +874,21 @@
                     "id": {
                       "type": "string"
                     },
+                    "origin": {
+                      "type": "string",
+                      "enum": [
+                        "web",
+                        "api",
+                        "unknown"
+                      ]
+                    },
                     "status": {
                       "type": "string",
                       "enum": [
                         "queued",
                         "processing",
+                        "pausing",
+                        "paused",
                         "completed",
                         "failed",
                         "canceled"
@@ -928,6 +986,7 @@
                   },
                   "required": [
                     "id",
+                    "origin",
                     "status",
                     "phase",
                     "createdAt",
@@ -1017,11 +1076,21 @@
                     "id": {
                       "type": "string"
                     },
+                    "origin": {
+                      "type": "string",
+                      "enum": [
+                        "web",
+                        "api",
+                        "unknown"
+                      ]
+                    },
                     "status": {
                       "type": "string",
                       "enum": [
                         "queued",
                         "processing",
+                        "pausing",
+                        "paused",
                         "completed",
                         "failed",
                         "canceled"
@@ -1082,6 +1151,409 @@
                   },
                   "required": [
                     "id",
+                    "origin",
+                    "status",
+                    "phase",
+                    "createdAt",
+                    "updatedAt",
+                    "originalFilename",
+                    "attempts",
+                    "queuePosition",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}/pause": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "origin": {
+                      "type": "string",
+                      "enum": [
+                        "web",
+                        "api",
+                        "unknown"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "processing",
+                        "pausing",
+                        "paused",
+                        "completed",
+                        "failed",
+                        "canceled"
+                      ]
+                    },
+                    "phase": {
+                      "nullable": true,
+                      "type": "string",
+                      "enum": [
+                        "validating",
+                        "converting",
+                        "transcribing",
+                        "exporting"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "originalFilename": {
+                      "type": "string"
+                    },
+                    "attempts": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "queuePosition": {
+                      "nullable": true,
+                      "type": "integer",
+                      "minimum": 0,
+                      "exclusiveMinimum": true,
+                      "maximum": 9007199254740991
+                    },
+                    "error": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "origin",
+                    "status",
+                    "phase",
+                    "createdAt",
+                    "updatedAt",
+                    "originalFilename",
+                    "attempts",
+                    "queuePosition",
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "requestId": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "type": "object",
+                          "additionalProperties": {}
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message",
+                        "requestId"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}/resume": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "origin": {
+                      "type": "string",
+                      "enum": [
+                        "web",
+                        "api",
+                        "unknown"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "processing",
+                        "pausing",
+                        "paused",
+                        "completed",
+                        "failed",
+                        "canceled"
+                      ]
+                    },
+                    "phase": {
+                      "nullable": true,
+                      "type": "string",
+                      "enum": [
+                        "validating",
+                        "converting",
+                        "transcribing",
+                        "exporting"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "originalFilename": {
+                      "type": "string"
+                    },
+                    "attempts": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "queuePosition": {
+                      "nullable": true,
+                      "type": "integer",
+                      "minimum": 0,
+                      "exclusiveMinimum": true,
+                      "maximum": 9007199254740991
+                    },
+                    "error": {
+                      "nullable": true,
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "origin",
                     "status",
                     "phase",
                     "createdAt",
@@ -1207,11 +1679,21 @@
                     "id": {
                       "type": "string"
                     },
+                    "origin": {
+                      "type": "string",
+                      "enum": [
+                        "web",
+                        "api",
+                        "unknown"
+                      ]
+                    },
                     "status": {
                       "type": "string",
                       "enum": [
                         "queued",
                         "processing",
+                        "pausing",
+                        "paused",
                         "completed",
                         "failed",
                         "canceled"
@@ -1272,6 +1754,7 @@
                   },
                   "required": [
                     "id",
+                    "origin",
                     "status",
                     "phase",
                     "createdAt",
@@ -1607,11 +2090,44 @@
                           "type": "integer",
                           "minimum": -9007199254740991,
                           "maximum": 9007199254740991
+                        },
+                        "paused": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "origins": {
+                          "type": "object",
+                          "properties": {
+                            "web": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "api": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "unknown": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "web",
+                            "api",
+                            "unknown"
+                          ],
+                          "additionalProperties": false
                         }
                       },
                       "required": [
                         "processing",
-                        "queued"
+                        "queued",
+                        "paused",
+                        "origins"
                       ],
                       "additionalProperties": false
                     },

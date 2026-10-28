@@ -20,7 +20,7 @@ import { uploadRoutes } from './routes/uploads.js';
 export async function buildApp(options: { config: Config; db: SqliteDatabase; provider: TranscriptionProvider; logger?: boolean }): Promise<FastifyInstance> {
   const { config, db, provider } = options;
   const app = Fastify({
-    logger: options.logger ?? { level: config.logLevel, redact: ['req.headers.authorization', 'headers.authorization'] },
+    logger: options.logger ?? { level: config.logLevel, redact: ['req.headers.authorization', 'headers.authorization', 'req.headers["x-whisper-hub-web-token"]', 'headers["x-whisper-hub-web-token"]'] },
     trustProxy: config.trustProxy,
     requestIdHeader: 'x-request-id',
     logController: new LogController({ requestIdLogLabel: 'requestId' }),

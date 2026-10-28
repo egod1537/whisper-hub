@@ -29,6 +29,7 @@ describe('OpenAPI contract', () => {
     expect(generated).toEqual(checkedIn);
     expect(Object.keys(generated.paths ?? {})).toEqual(expect.arrayContaining([
       '/', '/api/v1/jobs', '/api/v1/jobs/{id}', '/api/v1/jobs/{id}/results', '/api/v1/jobs/{id}/results/{format}',
+      '/api/v1/jobs/{id}/pause', '/api/v1/jobs/{id}/resume',
       '/api/v1/uploads', '/api/v1/uploads/{uploadId}', '/api/v1/uploads/{uploadId}/parts/{index}', '/api/v1/uploads/{uploadId}/complete',
     ]));
   });

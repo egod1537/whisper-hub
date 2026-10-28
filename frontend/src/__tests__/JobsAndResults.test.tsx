@@ -8,7 +8,7 @@ import type { JobDetail, JobStatus, JobSummary } from '../api/types';
 
 function summary(status: JobStatus, id: string = status): JobSummary {
   return {
-    id, status, phase: status === 'processing' ? 'transcribing' : null,
+    id, origin: 'web', status, phase: status === 'processing' ? 'transcribing' : null,
     createdAt: '2026-10-28T10:00:00Z', updatedAt: '2026-10-28T10:00:00Z', originalFilename: `${id}.wav`,
     attempts: status === 'failed' ? 1 : 0, queuePosition: status === 'queued' ? 1 : null,
     error: status === 'failed' ? { code: 'PROVIDER_UNAVAILABLE', message: '제공자를 사용할 수 없습니다.' } : null,
@@ -28,29 +28,43 @@ function resultApi(text: string): WhisperApi {
     fetchResultText: vi.fn().mockResolvedValue(text),
     downloadResult: vi.fn().mockResolvedValue({ blob: new Blob(['x']), filename: 'complete.txt' }),
     listJobs: vi.fn(), getJob: vi.fn(), getSystemStatus: vi.fn(), createJob: vi.fn(), createUpload: vi.fn(), getUpload: vi.fn(),
-    putUploadPart: vi.fn(), completeUpload: vi.fn(), abortUpload: vi.fn(), cancelJob: vi.fn(), retryJob: vi.fn(),
+    putUploadPart: vi.fn(), completeUpload: vi.fn(), abortUpload: vi.fn(), cancelJob: vi.fn(), pauseJob: vi.fn(), resumeJob: vi.fn(), retryJob: vi.fn(),
   };
 }
 
 describe('job actions and results', () => {
-  it('shows cancel and retry only for legal states', async () => {
+  it('filters by origin and exposes only legal pause, resume, cancel, retry, and result actions', async () => {
     const user = userEvent.setup();
-    const onCancel = vi.fn().mockResolvedValue(undefined);
-    const onRetry = vi.fn().mockResolvedValue(undefined);
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const onCancel = vi.fn().mockResolvedValue(true);
+    const onPause = vi.fn().mockResolvedValue(true);
+    const onResume = vi.fn().mockResolvedValue(true);
+    const onRetry = vi.fn().mockResolvedValue(true);
+    const onOriginFilter = vi.fn();
     render(<JobsList
-      jobs={[summary('queued'), summary('processing'), summary('completed'), summary('failed'), summary('canceled')]}
-      selectedId={null} selectedJob={null} systemStatus={{ provider: { reachable: true, model: 'base' }, jobs: { queued: 1, processing: 1 }, worker: { fresh: true, lastHeartbeatAt: null }, uploads: { active: 0, stagedBytes: 0, finalizing: 0 } }}
+      jobs={[summary('queued'), summary('processing'), summary('pausing'), summary('paused'), summary('completed'), summary('failed'), summary('canceled')]}
+      selectedId={null} selectedJob={null} originFilter="web"
+      systemStatus={{ provider: { reachable: true, model: 'base' }, jobs: { queued: 1, processing: 2, paused: 1, origins: { web: 5, api: 2, unknown: 0 } }, worker: { fresh: true, lastHeartbeatAt: null }, uploads: { active: 0, stagedBytes: 0, finalizing: 0 } }}
       loading={false} stale={false} error={null} nextCursor={null} pendingActionIds={new Set()}
-      onSelect={vi.fn()} onRefresh={vi.fn()} onLoadMore={vi.fn()} onCancel={onCancel} onRetry={onRetry}
+      onOriginFilter={onOriginFilter} onSelect={vi.fn()} onRefresh={vi.fn()} onLoadMore={vi.fn()}
+      onCancel={onCancel} onPause={onPause} onResume={onResume} onRetry={onRetry}
     />);
 
-    expect(screen.getAllByRole('button', { name: '취소' })).toHaveLength(2);
-    expect(screen.getAllByRole('button', { name: '재시도' })).toHaveLength(1);
-    await user.click(screen.getAllByRole('button', { name: '취소' })[1]!);
-    expect(window.confirm).toHaveBeenCalledOnce();
-    expect(onCancel).toHaveBeenCalledWith('processing');
-    await user.click(screen.getByRole('button', { name: '재시도' }));
+    expect(screen.getAllByRole('button', { name: /일시 중지$/ })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /취소$/ })).toHaveLength(4);
+    expect(screen.getByRole('button', { name: /재개$/ })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /재시도$/ })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /결과 열기$/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /API에서 등록/ }));
+    expect(onOriginFilter).toHaveBeenCalledWith('api');
+    await user.click(screen.getAllByRole('button', { name: /일시 중지$/ })[0]!);
+    expect(onPause).toHaveBeenCalledWith('queued');
+    await user.click(screen.getAllByRole('button', { name: /취소$/ })[0]!);
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '영구 취소' }));
+    expect(onCancel).toHaveBeenCalledWith('queued');
+    await user.click(screen.getByRole('button', { name: /재개$/ }));
+    expect(onResume).toHaveBeenCalledWith('paused');
+    await user.click(screen.getByRole('button', { name: /재시도$/ }));
     expect(onRetry).toHaveBeenCalledWith('failed');
   });
 
@@ -66,6 +80,17 @@ describe('job actions and results', () => {
     expect(screen.getByText(/처음 100,000자만 표시/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'TXT 다운로드' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'SRT 다운로드' })).toBeInTheDocument();
+  });
+
+  it('disables mutations while the selected job action is pending', () => {
+    render(<JobsList
+      jobs={[summary('queued')]} selectedId={null} selectedJob={null} originFilter="web" systemStatus={null}
+      loading={false} stale={false} error={null} nextCursor={null} pendingActionIds={new Set(['queued'])}
+      onOriginFilter={vi.fn()} onSelect={vi.fn()} onRefresh={vi.fn()} onLoadMore={vi.fn()}
+      onCancel={vi.fn()} onPause={vi.fn()} onResume={vi.fn()} onRetry={vi.fn()}
+    />);
+    expect(screen.getByRole('button', { name: /일시 중지$/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /취소$/ })).toBeDisabled();
   });
 
   it('does not request a TXT preview when TXT was not produced', async () => {

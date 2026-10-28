@@ -4,6 +4,14 @@ import { loadConfig } from '../../src/shared/config.js';
 describe('configuration', () => {
   it('fails fast without an API key', () => {
     expect(() => loadConfig({ DATA_DIR: '/tmp/whisper-hub-config-test' })).toThrow(/API_KEY/);
+    expect(() => loadConfig({ DATA_DIR: '/tmp/whisper-hub-config-test', API_KEY: 'a'.repeat(32) })).toThrow(/WEB_PROXY_TOKEN/);
+  });
+
+  it('requires independent production API and web proxy secrets', () => {
+    const config = loadConfig({
+      DATA_DIR: '/tmp/whisper-hub-config-test', API_KEY: 'a'.repeat(32), WEB_PROXY_TOKEN: 'b'.repeat(32),
+    });
+    expect(config.apiKey).not.toBe(config.webProxyToken);
   });
 
   it('allows an explicit test mode without a key', () => {

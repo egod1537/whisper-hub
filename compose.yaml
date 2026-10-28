@@ -3,6 +3,7 @@ name: whisper-hub
 x-common-environment: &common-environment
   NODE_ENV: production
   API_KEY: ${API_KEY:?Set API_KEY in .env}
+  WEB_PROXY_TOKEN: ${WEB_PROXY_TOKEN:?Set WEB_PROXY_TOKEN in .env}
   DATA_DIR: /data
   DB_PATH: /data/whisper-hub.sqlite
   WHISPER_BASE_URL: ${WHISPER_BASE_URL:-http://host.docker.internal:8080}
@@ -85,6 +86,7 @@ services:
     restart: unless-stopped
     environment:
       API_KEY: ${API_KEY:?Set API_KEY in .env}
+      WEB_PROXY_TOKEN: ${WEB_PROXY_TOKEN:?Set WEB_PROXY_TOKEN in .env}
     depends_on:
       api:
         condition: service_healthy

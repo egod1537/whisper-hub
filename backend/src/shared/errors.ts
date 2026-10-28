@@ -21,6 +21,8 @@ export type ErrorCode =
   | 'INCOMPLETE_UPLOAD'
   | 'FILE_HASH_MISMATCH'
   | 'JOB_NOT_CANCELABLE'
+  | 'JOB_NOT_PAUSABLE'
+  | 'JOB_NOT_RESUMABLE'
   | 'JOB_NOT_RETRYABLE'
   | 'JOB_NOT_COMPLETE'
   | 'FORMAT_NOT_AVAILABLE'
@@ -33,6 +35,8 @@ export type ErrorCode =
   | 'PROVIDER_INVALID_RESPONSE'
   | 'CONVERSION_FAILED'
   | 'CANCELED'
+  | 'PAUSE_REQUESTED'
+  | 'WORKER_LEASE_LOST'
   | 'INTERNAL_ERROR';
 
 export class AppError extends Error {

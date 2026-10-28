@@ -103,7 +103,7 @@ export async function uploadResumably(api: WhisperApi, file: File, language: Lan
   if (!status.jobId) throw new Error('완료된 업로드에 작업 ID가 없습니다.');
   const job = await api.getJob(status.jobId, options.signal);
   return {
-    id: job.id, status: job.status, phase: job.phase, createdAt: job.createdAt, queuePosition: job.queuePosition,
+    id: job.id, origin: job.origin, status: job.status, phase: job.phase, createdAt: job.createdAt, queuePosition: job.queuePosition,
     links: { self: `/api/v1/jobs/${job.id}`, results: `/api/v1/jobs/${job.id}/results` },
   };
 }

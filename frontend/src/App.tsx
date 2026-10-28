@@ -2,6 +2,7 @@ import { Callout, Navbar, Tag } from '@blueprintjs/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiClient, checkHealth } from './api/client';
 import { JobsList } from './components/JobsList';
+import type { OriginFilter } from './components/JobsList';
 import { TranscriptPanel } from './components/TranscriptPanel';
 import { UploadPanel } from './components/UploadPanel';
 import { useJobs } from './hooks/useJobs';
@@ -9,12 +10,13 @@ import { useJobs } from './hooks/useJobs';
 export function App() {
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [originFilter, setOriginFilter] = useState<OriginFilter>('web');
 
   const api = useMemo(() => new ApiClient(), []);
   const handleUnauthorized = useCallback(() => {
     setAuthNotice('서버의 API 인증 설정을 확인해 주세요.');
   }, []);
-  const jobs = useJobs(api, handleUnauthorized);
+  const jobs = useJobs(api, handleUnauthorized, originFilter === 'all' ? undefined : originFilter);
 
   useEffect(() => {
     let disposed = false;
@@ -63,16 +65,20 @@ export function App() {
             selectedId={jobs.selectedId}
             selectedJob={jobs.selectedJob}
             systemStatus={jobs.systemStatus}
+            originFilter={originFilter}
             loading={jobs.loading}
             stale={jobs.stale}
             error={jobs.error}
             nextCursor={jobs.nextCursor}
             pendingActionIds={jobs.pendingActionIds}
             disabled={connected === false}
+            onOriginFilter={setOriginFilter}
             onSelect={jobs.selectJob}
             onRefresh={jobs.refresh}
             onLoadMore={jobs.loadMore}
             onCancel={jobs.cancelJob}
+            onPause={jobs.pauseJob}
+            onResume={jobs.resumeJob}
             onRetry={jobs.retryJob}
           />
         </div>

@@ -14,8 +14,8 @@ export function sourceRelativePath(jobId: string): string {
   return path.posix.join('uploads', jobId, 'source');
 }
 
-export function resultRelativePath(jobId: string): string {
-  return path.posix.join('results', jobId);
+export function resultRelativePath(jobId: string, attemptId?: string): string {
+  return path.posix.join('results', jobId, ...(attemptId ? [attemptId] : []));
 }
 
 export function tempRelativePath(jobId: string, suffix: string): string {

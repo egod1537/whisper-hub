@@ -14,7 +14,7 @@ function add(id: string, now: Date, maxAttempts = 3) {
   return repository.create({
     id, originalFilename: `${id}.wav`, mediaType: 'audio/wav', fileSizeBytes: 10,
     sourcePath: `uploads/${id}/source`, language: 'auto', requestedOutputFormats: ['txt'],
-    maxAttempts, model: 'base',
+    maxAttempts, model: 'base', origin: 'api',
   }, now);
 }
 
@@ -43,18 +43,19 @@ describe('durable queue', () => {
   it('heartbeats, recovers expired leases, and exhausts attempts', () => {
     const now = new Date('2026-10-28T00:00:00.000Z');
     add('one', now, 2);
-    expect(repository.claim('worker', 60, now)?.attempts).toBe(1);
-    expect(repository.heartbeat('one', 'worker', 60, new Date(now.getTime() + 30_000)).renewed).toBe(true);
-    expect(repository.recoverExpired(new Date(now.getTime() + 91_000))[0]?.status).toBe('queued');
+    const first = repository.claim('worker', 60, now)!;
+    expect(first.attempts).toBe(1);
+    expect(repository.heartbeat('one', first.leaseOwner!, 60, new Date(now.getTime() + 30_000)).renewed).toBe(true);
+    expect(repository.recoverExpired(new Date(now.getTime() + 91_000))[0]?.job.status).toBe('queued');
     expect(repository.claim('worker-2', 60, new Date(now.getTime() + 91_000))?.attempts).toBe(2);
-    expect(repository.recoverExpired(new Date(now.getTime() + 152_000))[0]?.status).toBe('failed');
+    expect(repository.recoverExpired(new Date(now.getTime() + 152_000))[0]?.job.status).toBe('failed');
   });
 
   it('lets an eligible job bypass a delayed retry', () => {
     const now = new Date('2026-10-28T00:00:00.000Z');
     add('one', now); add('two', new Date(now.getTime() + 1));
-    repository.claim('worker', 60, now);
-    repository.failOrRetry('one', 'worker', 'PROVIDER_UNAVAILABLE', 'retry', true, 30, now);
+    const claimed = repository.claim('worker', 60, now)!;
+    repository.failOrRetry('one', claimed.leaseOwner!, 'PROVIDER_UNAVAILABLE', 'retry', true, 30, now);
     expect(repository.claim('worker', 60, new Date(now.getTime() + 10_000))?.id).toBe('two');
   });
 
@@ -63,10 +64,46 @@ describe('durable queue', () => {
     add('queued', now); add('failed', new Date(now.getTime() + 1), 1);
     expect(repository.requestCancellation('queued', now).status).toBe('canceled');
     expect(() => repository.retryFailed('queued', 3)).toThrow();
-    repository.claim('worker', 60, now);
-    repository.failOrRetry('failed', 'worker', 'MEDIA_INVALID', 'bad', false, 0, now);
+    const claimed = repository.claim('worker', 60, now)!;
+    repository.failOrRetry('failed', claimed.leaseOwner!, 'MEDIA_INVALID', 'bad', false, 0, now);
     const retried = repository.retryFailed('failed', 3, 5, now);
     expect(retried).toMatchObject({ status: 'queued', attempts: 0, manualRetryCount: 1 });
+  });
+
+  it('holds queued jobs, resumes at the back of the eligible FIFO, and cancels idempotently', () => {
+    const now = new Date('2026-10-28T00:00:00.000Z');
+    add('first', now); add('second', new Date(now.getTime() + 1));
+    expect(repository.requestPause('first', new Date(now.getTime() + 2))).toMatchObject({ status: 'paused', attempts: 0 });
+    expect(repository.queuePosition('first')).toBeNull();
+    expect(repository.claim('worker', 60, new Date(now.getTime() + 3))?.id).toBe('second');
+    add('third', new Date(now.getTime() + 4));
+    const resumed = repository.resumePaused('first', new Date(now.getTime() + 5));
+    expect(resumed.status).toBe('queued');
+    expect(repository.claim('worker-2', 60, new Date(now.getTime() + 6))?.id).toBe('third');
+    expect(repository.requestCancellation('first').status).toBe('canceled');
+    expect(repository.requestCancellation('first').status).toBe('canceled');
+  });
+
+  it('pauses active work without consuming an attempt and fences stale owners', () => {
+    const now = new Date('2026-10-28T00:00:00.000Z');
+    add('paused-work', now);
+    const claimed = repository.claim('worker-a', 60, now)!;
+    expect(repository.requestPause(claimed.id, new Date(now.getTime() + 1)).status).toBe('pausing');
+    expect(repository.failOrRetry(claimed.id, claimed.leaseOwner!, 'PAUSE_REQUESTED', 'paused', false, 0, new Date(now.getTime() + 2))).toMatchObject({ status: 'paused', attempts: 0 });
+    expect(repository.resumePaused(claimed.id, new Date(now.getTime() + 3)).status).toBe('queued');
+    const reclaimed = repository.claim('worker-b', 60, new Date(now.getTime() + 4))!;
+    expect(reclaimed.leaseOwner).not.toBe(claimed.leaseOwner);
+    expect(repository.complete(claimed.id, claimed.leaseOwner!, 'results/stale', {})).toBe(false);
+    expect(repository.complete(claimed.id, reclaimed.leaseOwner!, 'results/current', {})).toBe(true);
+  });
+
+  it('recovers a crashed pausing worker into paused without publishing late success', () => {
+    const now = new Date('2026-10-28T00:00:00.000Z');
+    add('crashed-pause', now);
+    const claimed = repository.claim('worker-a', 1, now)!;
+    repository.requestPause(claimed.id, new Date(now.getTime() + 100));
+    expect(repository.recoverExpired(new Date(now.getTime() + 1_001))[0]?.job).toMatchObject({ status: 'paused', attempts: 0 });
+    expect(repository.complete(claimed.id, claimed.leaseOwner!, 'results/stale', {})).toBe(false);
   });
 });
 

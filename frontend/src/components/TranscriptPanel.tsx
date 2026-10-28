@@ -27,6 +27,15 @@ export interface TranscriptPanelProps {
   loading?: boolean;
 }
 
+function incompleteState(job: JobDetail): { title: string; description: string } {
+  if (job.status === 'failed') return { title: '전사에 실패했습니다', description: job.error?.message ?? '작업 대기열에서 오류를 확인하세요.' };
+  if (job.status === 'canceled') return { title: '취소된 작업입니다', description: '취소된 작업은 재개할 수 없습니다.' };
+  if (job.status === 'paused') return { title: '일시 중지된 작업입니다', description: '재개하면 대기열 끝에 들어가 처음부터 다시 처리합니다.' };
+  if (job.status === 'pausing') return { title: '일시 중지 중입니다', description: '현재 처리를 안전하게 멈추고 있습니다.' };
+  if (job.status === 'queued') return { title: '대기 중인 작업입니다', description: '차례가 되면 전사를 시작합니다.' };
+  return { title: '전사가 진행 중입니다', description: '완료되면 결과가 자동으로 표시됩니다.' };
+}
+
 export function TranscriptPanel({ api, job, loading = false }: TranscriptPanelProps) {
   const [manifest, setManifest] = useState<ResultsManifest | null>(null);
   const [transcript, setTranscript] = useState<string | null>(null);
@@ -112,8 +121,8 @@ export function TranscriptPanel({ api, job, loading = false }: TranscriptPanelPr
         <NonIdealState title="작업을 선택해 주세요" description="완료된 작업의 결과를 미리 보고 내려받을 수 있습니다." />
       ) : job.status !== 'completed' ? (
         <NonIdealState
-          title={job.status === 'failed' ? '전사에 실패했습니다' : job.status === 'canceled' ? '취소된 작업입니다' : '전사가 진행 중입니다'}
-          description={job.error?.message ?? (job.status === 'processing' ? '완료되면 결과가 자동으로 표시됩니다.' : '작업 대기열에서 현재 상태를 확인하세요.')}
+          title={incompleteState(job).title}
+          description={incompleteState(job).description}
         />
       ) : resultLoading ? (
         <div className="centered-loading" role="status"><Spinner size={24} /> 결과를 불러오는 중</div>

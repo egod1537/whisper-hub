@@ -25,6 +25,7 @@ import {
   systemStatusSchema,
 } from '../schemas.js';
 import { jobDetail, jobSummary } from '../presentation.js';
+import { requestOrigin } from '../provenance.js';
 
 function requestHash(fileHash: string, language: string, formats: OutputFormat[]): string {
   return createHash('sha256').update(JSON.stringify({ fileHash, language, formats })).digest('hex');
@@ -74,6 +75,7 @@ export async function jobRoutes(app: FastifyInstance, options: {
     let filename = '';
     let mediaType = '';
     let fileCount = 0;
+    const origin = requestOrigin(request, config);
     try {
       for await (const part of request.parts()) {
         if (part.type === 'file') {
@@ -111,6 +113,7 @@ export async function jobRoutes(app: FastifyInstance, options: {
           stored = null;
           return reply.code(200).send({
             id: existing.id,
+            origin: existing.origin,
             status: existing.status,
             phase: existing.phase,
             createdAt: existing.createdAt,
@@ -135,6 +138,7 @@ export async function jobRoutes(app: FastifyInstance, options: {
           requestedOutputFormats: formats,
           maxAttempts: config.jobMaxAttempts,
           model: config.defaultModel,
+          origin,
           ...(idempotencyKeyHeader ? { idempotencyKey: idempotencyKeyHeader, requestHash: hash } : {}),
         });
       } catch (error) {
@@ -143,7 +147,7 @@ export async function jobRoutes(app: FastifyInstance, options: {
           const existing = repository.findByIdempotencyKey(idempotencyKeyHeader);
           if (existing?.requestHash === hash) {
             return reply.code(200).send({
-              id: existing.id, status: existing.status, phase: existing.phase, createdAt: existing.createdAt,
+              id: existing.id, origin: existing.origin, status: existing.status, phase: existing.phase, createdAt: existing.createdAt,
               queuePosition: repository.queuePosition(existing.id),
               links: { self: `/api/v1/jobs/${existing.id}`, results: `/api/v1/jobs/${existing.id}/results` },
             });
@@ -154,6 +158,7 @@ export async function jobRoutes(app: FastifyInstance, options: {
       request.log.info({ jobId: job.id, status: job.status }, 'job queued');
       return reply.code(202).send({
         id: job.id,
+        origin: job.origin,
         status: 'queued',
         phase: null,
         createdAt: job.createdAt,
@@ -174,6 +179,7 @@ export async function jobRoutes(app: FastifyInstance, options: {
     const query = listQuerySchema.parse(request.query);
     const items = repository.list({
       ...(query.status ? { status: query.status } : {}),
+      ...(query.origin ? { origin: query.origin } : {}),
       limit: query.limit + 1,
       ...(query.cursor ? { cursor: decodeCursor(query.cursor) } : {}),
     });
@@ -195,6 +201,24 @@ export async function jobRoutes(app: FastifyInstance, options: {
     const { id } = idParamsSchema.parse(request.params);
     const job = repository.requestCancellation(id);
     request.log.info({ jobId: job.id, status: job.status }, 'job cancellation requested');
+    return reply.code(202).send(jobSummary(job, repository));
+  });
+
+  app.post('/api/v1/jobs/:id/pause', {
+    schema: { tags: ['jobs'], params: idParamsSchema, response: { 202: jobSummarySchema, 404: errorResponseSchema, 409: errorResponseSchema } },
+  }, async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const job = repository.requestPause(id);
+    request.log.info({ jobId: job.id, status: job.status }, 'job pause requested');
+    return reply.code(202).send(jobSummary(job, repository));
+  });
+
+  app.post('/api/v1/jobs/:id/resume', {
+    schema: { tags: ['jobs'], params: idParamsSchema, response: { 202: jobSummarySchema, 404: errorResponseSchema, 409: errorResponseSchema } },
+  }, async (request, reply) => {
+    const { id } = idParamsSchema.parse(request.params);
+    const job = repository.resumePaused(id);
+    request.log.info({ jobId: job.id, status: job.status }, 'job resumed');
     return reply.code(202).send(jobSummary(job, repository));
   });
 

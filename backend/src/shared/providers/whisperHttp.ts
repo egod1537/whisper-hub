@@ -49,7 +49,10 @@ async function multipartRequest(url: URL, wavPath: string, language: string, sig
     request.on('error', reject);
     request.write(prefix);
     const stream = fs.createReadStream(wavPath);
+    const abortStream = () => stream.destroy(new AppError('CANCELED', 'Job cancellation requested.', 409));
+    signal.addEventListener('abort', abortStream, { once: true });
     stream.on('error', reject);
+    stream.on('close', () => signal.removeEventListener('abort', abortStream));
     stream.on('end', () => request.end(suffix));
     stream.pipe(request, { end: false });
   });

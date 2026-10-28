@@ -1,4 +1,4 @@
-import type { OutputFormat } from '../queue/types.js';
+import type { JobOrigin, OutputFormat } from '../queue/types.js';
 
 export const uploadStatuses = ['uploading', 'finalizing', 'completed', 'expired', 'aborted'] as const;
 export type UploadStatus = (typeof uploadStatuses)[number];
@@ -6,6 +6,7 @@ export type UploadStatus = (typeof uploadStatuses)[number];
 export interface UploadSession {
   id: string;
   status: UploadStatus;
+  origin: JobOrigin;
   displayFilename: string;
   totalSizeBytes: number;
   expectedSha256: string | null;

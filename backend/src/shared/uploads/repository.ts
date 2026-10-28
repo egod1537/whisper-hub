@@ -1,6 +1,6 @@
 import type { SqliteDatabase } from '../db/connection.js';
 import { AppError } from '../errors.js';
-import type { OutputFormat } from '../queue/types.js';
+import type { JobOrigin, OutputFormat } from '../queue/types.js';
 import type { UploadPart, UploadSession, UploadStatus, UploadStatusView } from './types.js';
 
 type Row = Record<string, string | number | bigint | Buffer | null>;
@@ -8,7 +8,7 @@ const nowIso = (now = new Date()) => now.toISOString();
 
 function rowToSession(row: Row): UploadSession {
   return {
-    id: String(row.id), status: row.status as UploadStatus, displayFilename: String(row.display_filename),
+    id: String(row.id), status: row.status as UploadStatus, origin: row.origin as JobOrigin, displayFilename: String(row.display_filename),
     totalSizeBytes: Number(row.total_size_bytes), expectedSha256: row.expected_sha256 === null ? null : String(row.expected_sha256),
     computedSha256: row.computed_sha256 === null ? null : String(row.computed_sha256), language: String(row.language),
     formats: JSON.parse(String(row.formats_json)) as OutputFormat[], chunkSizeBytes: Number(row.chunk_size_bytes),
@@ -28,7 +28,7 @@ function rowToPart(row: Row): UploadPart {
 export interface CreateUploadInput {
   id: string; displayFilename: string; totalSizeBytes: number; expectedSha256: string | null; language: string;
   formats: OutputFormat[]; chunkSizeBytes: number; totalChunks: number; expiresAt: string;
-  idempotencyKey: string | null; requestHash: string;
+  idempotencyKey: string | null; requestHash: string; origin: JobOrigin;
 }
 
 export class UploadRepository {
@@ -48,10 +48,10 @@ export class UploadRepository {
       const active = this.db.prepare("SELECT COUNT(*) count FROM upload_sessions WHERE status IN ('uploading','finalizing')").get() as { count: number };
       if (Number(active.count) >= maxActive) throw new AppError('UPLOAD_LIMIT_REACHED', 'Too many active upload sessions.', 429, true);
       this.db.prepare(`INSERT INTO upload_sessions (
-        id,status,display_filename,total_size_bytes,expected_sha256,language,formats_json,chunk_size_bytes,total_chunks,
+        id,status,origin,display_filename,total_size_bytes,expected_sha256,language,formats_json,chunk_size_bytes,total_chunks,
         created_at,updated_at,expires_at,create_idempotency_key,create_request_hash
-      ) VALUES (?, 'uploading', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-        .run(input.id, input.displayFilename, input.totalSizeBytes, input.expectedSha256, input.language, JSON.stringify(input.formats),
+      ) VALUES (?, 'uploading', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(input.id, input.origin, input.displayFilename, input.totalSizeBytes, input.expectedSha256, input.language, JSON.stringify(input.formats),
           input.chunkSizeBytes, input.totalChunks, timestamp, timestamp, input.expiresAt, input.idempotencyKey, input.requestHash);
       return { session: this.getRequired(input.id), replay: false };
     }).immediate();
@@ -198,10 +198,10 @@ export class UploadRepository {
       if (session.status !== 'finalizing' || session.finalizeOwner !== input.owner || !session.jobId) throw new AppError('UPLOAD_STATE_CONFLICT', 'Finalization lease was lost.', 409, true);
       const timestamp = nowIso(now);
       this.db.prepare(`INSERT INTO jobs (
-        id,status,phase,created_at,updated_at,original_filename,media_type,file_size_bytes,source_path,language,
+        id,status,phase,origin,created_at,queue_entered_at,updated_at,original_filename,media_type,file_size_bytes,source_path,language,
         requested_output_formats,provider,model,max_attempts
-      ) VALUES (?, 'queued', NULL, ?, ?, ?, 'application/octet-stream', ?, ?, ?, ?, 'whisper_cpp', ?, ?)`)
-        .run(session.jobId, timestamp, timestamp, session.displayFilename, session.totalSizeBytes, input.sourcePath, session.language,
+      ) VALUES (?, 'queued', NULL, ?, ?, ?, ?, ?, 'application/octet-stream', ?, ?, ?, ?, 'whisper_cpp', ?, ?)`)
+        .run(session.jobId, session.origin, timestamp, timestamp, timestamp, session.displayFilename, session.totalSizeBytes, input.sourcePath, session.language,
           JSON.stringify(session.formats), input.model, input.maxAttempts);
       const changed = this.db.prepare(`UPDATE upload_sessions SET status='completed',computed_sha256=?,updated_at=?,finalize_owner=NULL,
         finalize_lease_expires_at=NULL,error_code=NULL,error_message=NULL WHERE id=? AND status='finalizing' AND finalize_owner=?`)

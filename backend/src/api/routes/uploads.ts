@@ -16,6 +16,7 @@ import {
   completeUploadResponseSchema, createUploadBodySchema, createUploadResponseSchema, errorResponseSchema,
   uploadParamsSchema, uploadPartParamsSchema, uploadStatusSchema,
 } from '../schemas.js';
+import { requestOrigin } from '../provenance.js';
 
 function idempotencyKey(header: string | string[] | undefined): string | null {
   if (Array.isArray(header) || (header !== undefined && !/^[\x21-\x7e]{1,128}$/.test(header))) {
@@ -63,6 +64,7 @@ export async function uploadRoutes(app: FastifyInstance, options: { config: Conf
     schema: { tags: ['uploads'], body: createUploadBodySchema, response: { 200: createUploadResponseSchema, 201: createUploadResponseSchema, 401: errorResponseSchema, 409: errorResponseSchema, 413: errorResponseSchema, 422: errorResponseSchema, 429: errorResponseSchema } },
   }, async (request, reply) => {
     const body = createUploadBodySchema.parse(request.body);
+    const origin = requestOrigin(request, config);
     if (body.sizeBytes > config.maxResumableUploadBytes) throw new AppError('PAYLOAD_TOO_LARGE', 'Upload exceeds the resumable upload limit.', 413);
     const language = parseLanguage(body.language);
     const formats = parseFormats(body.formats);
@@ -74,6 +76,7 @@ export async function uploadRoutes(app: FastifyInstance, options: { config: Conf
       id: randomUUID(), displayFilename: filename, totalSizeBytes: body.sizeBytes, expectedSha256: body.sha256 ?? null,
       language, formats, chunkSizeBytes: config.uploadChunkSizeBytes, totalChunks,
       expiresAt: new Date(Date.now() + config.uploadSessionTtlHours * 3_600_000).toISOString(), idempotencyKey: key, requestHash,
+      origin,
     }, config.uploadMaxActiveSessions);
     const session = result.session;
     return reply.code(result.replay ? 200 : 201).send({ uploadId: session.id, chunkSizeBytes: session.chunkSizeBytes, totalChunks: session.totalChunks, expiresAt: session.expiresAt, status: session.status });

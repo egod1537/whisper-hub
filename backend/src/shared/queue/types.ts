@@ -1,5 +1,7 @@
-export const jobStatuses = ['queued', 'processing', 'completed', 'failed', 'canceled'] as const;
+export const jobStatuses = ['queued', 'processing', 'pausing', 'paused', 'completed', 'failed', 'canceled'] as const;
 export type JobStatus = (typeof jobStatuses)[number];
+export const jobOrigins = ['web', 'api', 'unknown'] as const;
+export type JobOrigin = (typeof jobOrigins)[number];
 export const jobPhases = ['validating', 'converting', 'transcribing', 'exporting'] as const;
 export type JobPhase = (typeof jobPhases)[number];
 export const outputFormats = ['txt', 'srt', 'vtt', 'json'] as const;
@@ -9,7 +11,9 @@ export interface Job {
   id: string;
   status: JobStatus;
   phase: JobPhase | null;
+  origin: JobOrigin;
   createdAt: string;
+  queueEnteredAt: string;
   updatedAt: string;
   startedAt: string | null;
   completedAt: string | null;
@@ -27,6 +31,7 @@ export interface Job {
   leaseOwner: string | null;
   leaseExpiresAt: string | null;
   cancelRequested: boolean;
+  pauseRequested: boolean;
   errorCode: string | null;
   errorMessage: string | null;
   resultBasePath: string | null;
@@ -47,12 +52,14 @@ export interface CreateJobInput {
   requestedOutputFormats: OutputFormat[];
   maxAttempts: number;
   model: string;
+  origin: JobOrigin;
   idempotencyKey?: string;
   requestHash?: string;
 }
 
 export interface ListJobsInput {
   status?: JobStatus;
+  origin?: JobOrigin;
   limit: number;
   cursor?: { createdAt: string; id: string };
 }

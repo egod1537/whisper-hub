@@ -6,8 +6,13 @@ export default defineConfig(({ mode }) => {
   const repositoryRoot = fileURLToPath(new URL('..', import.meta.url));
   const environment = loadEnv(mode, repositoryRoot, '');
   const apiKey = process.env.API_KEY ?? environment.API_KEY;
+  const webProxyToken = process.env.WEB_PROXY_TOKEN ?? environment.WEB_PROXY_TOKEN;
   const target = process.env.VITE_PROXY_TARGET ?? environment.VITE_PROXY_TARGET ?? 'http://127.0.0.1:3000';
   const authenticatedHeaders = apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+  const webHeaders = {
+    ...authenticatedHeaders,
+    ...(webProxyToken ? { 'X-Whisper-Hub-Web-Token': webProxyToken } : {}),
+  };
 
   return {
     plugins: [react()],
@@ -16,7 +21,8 @@ export default defineConfig(({ mode }) => {
       port: 4173,
       strictPort: true,
       proxy: {
-        '/api': { target, changeOrigin: false, headers: authenticatedHeaders },
+        '/web-api': { target, changeOrigin: false, headers: webHeaders, rewrite: (requestPath) => requestPath.replace(/^\/web-api/, '/api') },
+        '/api': { target, changeOrigin: false, headers: { ...authenticatedHeaders, 'X-Whisper-Hub-Web-Token': '' } },
         '/health': { target, changeOrigin: false },
       },
     },

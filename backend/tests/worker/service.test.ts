@@ -20,7 +20,7 @@ function createJob(id: string, data = makeWav(), maxAttempts = 3) {
   return context.repository.create({
     id, originalFilename: `${id}.wav`, mediaType: 'audio/wav', fileSizeBytes: data.length,
     sourcePath: relative, language: 'auto', requestedOutputFormats: ['txt', 'srt', 'vtt', 'json'],
-    maxAttempts, model: 'base',
+    maxAttempts, model: 'base', origin: 'api',
   });
 }
 
@@ -67,6 +67,37 @@ describe('worker', () => {
     };
     await worker().runOnce();
     expect(context.repository.getRequired('job-cancel').status).toBe('canceled');
+  });
+
+  it('cooperatively pauses active provider work and resumes from the beginning without spending an attempt', async () => {
+    createJob('job-pause');
+    context.provider.transcribe = async () => {
+      context.repository.requestPause('job-pause');
+      return context.provider.result;
+    };
+    await worker().runOnce();
+    expect(context.repository.getRequired('job-pause')).toMatchObject({ status: 'paused', attempts: 0, resultBasePath: null });
+    expect(context.repository.resumePaused('job-pause').status).toBe('queued');
+    context.provider.transcribe = async () => context.provider.result;
+    await worker().runOnce();
+    expect(context.repository.getRequired('job-pause')).toMatchObject({ status: 'completed', attempts: 1 });
+  });
+
+  it('propagates an active pause to the provider abort signal', async () => {
+    createJob('job-abort-pause');
+    let providerAborted = false;
+    context.provider.transcribe = async (input) => {
+      context.repository.requestPause('job-abort-pause');
+      await new Promise<void>((resolve) => {
+        if (input.signal.aborted) resolve();
+        else input.signal.addEventListener('abort', () => resolve(), { once: true });
+      });
+      providerAborted = input.signal.aborted;
+      throw new AppError('CANCELED', 'aborted');
+    };
+    await worker().runOnce();
+    expect(providerAborted).toBe(true);
+    expect(context.repository.getRequired('job-abort-pause')).toMatchObject({ status: 'paused', attempts: 0 });
   });
 });
 

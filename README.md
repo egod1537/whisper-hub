@@ -8,7 +8,7 @@ Whisper Hub is a private transcription queue for one Apple Silicon Mac. A small 
 
 ```text
 browser -> 127.0.0.1:4173 frontend (Nginx)
-                    | same-origin /api and /health proxy
+                    | same-origin /web-api and /health proxy
                     v
              Docker API -> /data/whisper-hub.sqlite + upload parts
                                 |                 |
@@ -55,10 +55,11 @@ The native setup uses the pinned official `whisper.cpp` tag `v1.9.5`, enables `G
 
    ```sh
    cp .env.example .env
-   openssl rand -hex 32
+   openssl rand -hex 32 # API_KEY
+   openssl rand -hex 32 # WEB_PROXY_TOKEN
    ```
 
-   Put the generated value after `API_KEY=` in `.env`; do not paste it into commands that will be retained in shell history if that is a concern. Keep `.env` mode-restricted:
+   Put the two independent values after `API_KEY=` and `WEB_PROXY_TOKEN=` in `.env`. The latter is an internal provenance secret shared only by Nginx and the API; it is not a browser credential. Do not paste either value into commands retained in shell history if that is a concern. Keep `.env` mode-restricted:
 
    ```sh
    chmod 600 .env
@@ -75,7 +76,7 @@ The native setup uses the pinned official `whisper.cpp` tag `v1.9.5`, enables `G
    curl --fail http://127.0.0.1:4173/health/ready
    ```
 
-   Open <http://127.0.0.1:4173>. The UI uses only same-origin `/api` and `/health` requests through Nginx. Nginx injects the private key from its container environment, so the key is not placed in the browser, local storage, cookies, URLs, or the frontend bundle.
+   Open <http://127.0.0.1:4173>. The UI uses only same-origin `/web-api` and `/health` requests through Nginx. Nginx rewrites `/web-api` to the public API path and overwrites both the bearer credential and internal provenance header from its container environment. Neither secret is placed in the browser, local storage, cookies, URLs, or frontend bundle. The ordinary `/api` proxy explicitly removes the provenance header.
 
    Verify the host route from the worker network if provider connectivity fails:
 
@@ -134,7 +135,10 @@ All `/api/v1` routes and `/docs` require `Authorization: Bearer <API_KEY>`. Only
 - `POST /api/v1/uploads/:uploadId/complete`: changes the session to `finalizing` and returns `202`. The separate finalizer streams parts into one job source, then `GET /uploads/:uploadId` changes to `completed` with the one queue job ID.
 - `DELETE /api/v1/uploads/:uploadId`: aborts an incomplete session. A finalizing or completed session must be handled through its job instead.
 - `GET /api/v1/jobs` and `GET /api/v1/jobs/:id`: cursor-based list and job state. Progress is a phase, never a fabricated percentage.
-- `DELETE /api/v1/jobs/:id`: queued jobs cancel immediately; processing jobs set a cooperative cancellation flag. Provider and ffmpeg work are aborted where feasible, but cancellation can take time.
+- `GET /api/v1/jobs?origin=web|api|unknown`: filters the same queue by server-derived submission origin while retaining stable cursor pagination. `origin` groups this private single-owner service; it is not identity or an authorization boundary.
+- `POST /api/v1/jobs/:id/pause`: queued jobs become held immediately. Processing jobs enter `pausing` while ffmpeg or the provider is cooperatively aborted, then become `paused`. A pause does not consume the automatic retry budget.
+- `POST /api/v1/jobs/:id/resume`: a paused job returns to the end of the eligible FIFO with a new queue-entry timestamp. Transcription restarts from the beginning; partial Whisper progress is not checkpointed.
+- `DELETE /api/v1/jobs/:id`: cancellation is permanent and idempotent. Queued/paused jobs cancel immediately; processing/pausing jobs set a cooperative cancellation flag. Provider and ffmpeg work are aborted where feasible, but cancellation can take time. Completed and failed jobs return a state conflict.
 - `POST /api/v1/jobs/:id/retry`: failed jobs only. A manual retry keeps the job ID and attempt audit history, resets the automatic attempt counter/budget to `JOB_MAX_ATTEMPTS`, and is limited to five manual retries.
 - `GET /api/v1/jobs/:id/results[/format]`: completed results only, streamed as attachments without exposing filesystem paths.
 - `GET /api/v1/system/status`: authenticated provider reachability, queue counts, worker heartbeat freshness, active upload sessions, staged bytes, and finalizing count.
@@ -143,13 +147,15 @@ An `Idempotency-Key` is 1–128 visible ASCII characters. Reusing it with identi
 
 The browser uses resumable uploads for every file. It measures progress only after the server accepts a complete chunk, retries only network/429/5xx failures up to three times with backoff, and polls the asynchronous assembly phase before announcing a queued job. Refreshing preserves only non-secret resume metadata (session ID, original filename/size/mtime, language, formats) in `localStorage`; the operator must reselect the same local file. File bytes and credentials are never persisted by the UI.
 
-The FIFO order is `(created_at, id)` among currently eligible queued jobs. A retry waiting for backoff does not block later eligible jobs. Queue position is best-effort, 1-based, and can change; there is no ETA.
+Direct bearer-authenticated uploads are classified `api`. First-party browser uploads, including resumable sessions finalized later, are classified `web` only when the API receives the separate server-side proxy token. Client fields and ordinary headers cannot choose the origin. Both origins always use one shared worker and the same FIFO; neither has priority. Historical rows migrated by `0003_job_origin_and_controls.sql` are conservatively classified `api`.
+
+The FIFO order is `(queue_entered_at, id)` among currently eligible queued jobs. Initial queue entry uses creation time; resume and manual retry receive a new queue-entry time. Paused jobs have no queue position and cannot be claimed. A retry waiting for backoff does not block later eligible jobs. Queue position is best-effort, 1-based, and can change; there is no ETA.
 
 ## Worker and failure recovery
 
-The worker reserves a job with a SQLite `BEGIN IMMEDIATE` transaction, increments its attempt, commits, then processes outside the transaction. A lease heartbeat runs at most every 30 seconds. An expired processing lease is requeued when attempts remain or failed when exhausted. Retryable provider network, timeout, 429, and 5xx failures use bounded 10/30/60-second backoff. Invalid media, excessive duration, conversion failures, unsupported formats, and corrupt responses are terminal.
+The worker reserves a job with a SQLite `BEGIN IMMEDIATE` transaction, assigns a unique lease/fencing token, increments its attempt, commits, then processes outside the transaction. A lease heartbeat runs at least once per second during active work. Every phase, completion, pause, cancel, and failure mutation checks the token, so an expired worker cannot commit after another attempt takes ownership. An expired processing lease is requeued when attempts remain or failed when exhausted; an expired `pausing` lease recovers to `paused` without spending an attempt. Retryable provider network, timeout, 429, and 5xx failures use bounded 10/30/60-second backoff. Invalid media, excessive duration, conversion failures, unsupported formats, and corrupt responses are terminal.
 
-Input is converted with fixed `ffmpeg` arguments to mono 16 kHz signed 16-bit PCM WAV. No user string enters a shell command. Outputs are written with restrictive permissions in a job-specific temporary directory and atomically renamed before the database moves to `completed`. Completed output is never overwritten.
+Input is converted with fixed `ffmpeg` arguments to mono 16 kHz signed 16-bit PCM WAV. No user string enters a shell command. Outputs are written with restrictive permissions in a job-and-lease-specific temporary directory and atomically renamed into a lease-specific result directory before the fenced database completion. A stale attempt can remove only its own unpublished result, not a newer owner's files. Completed output is never overwritten.
 
 `whisper.cpp v1.9.5` is requested with `/inference`, `response_format=verbose_json`, and the job language. SRT/VTT are produced only from real `start`/`end` segment timestamps. A provider response without reliable timestamps fails instead of inventing them. `auto` language detection requires the configured multilingual host model.
 
@@ -210,26 +216,33 @@ docker compose up -d
 
 For an application upgrade:
 
+Before running any Compose command from this version, add a new 32-byte-or-longer `WEB_PROXY_TOKEN` to the existing `.env` if it is not already present. This is a configuration-only prerequisite and does not touch the database.
+
 ```sh
 git switch main
 git pull --ff-only origin main
+mkdir -p backups
+docker compose run --rm -v "$(pwd)/backups:/backup" worker \
+  node dist/cli/backup.js /backup/whisper-hub.pre-upgrade.sqlite
 docker compose build
 docker compose up -d
 ```
 
+The backup is mandatory before an upgrade containing a database migration; do not let the `migrate` service alter running production storage first. For a media-consistent backup, use the stopped-service procedure above. Keep the backup until API, worker, finalizer, queue controls, and result downloads have been verified.
+
 `origin/main` is the production deployment source of truth. Do not build an operational image from a dirty worktree or another branch.
 
-The one-shot `migrate` service applies forward-only migrations before API, upload finalizer, and worker startup. Migration `0002_resumable_uploads.sql` adds persistent sessions, validated parts, and cross-process part claims; no reset is required. To update `whisper.cpp`, review the official release and server contract, update the pinned tag and model checksum in `scripts/setup-macos-whisper.sh`, rerun tests and the native E2E, then rebuild on the host. Do not silently track `master`.
+The one-shot `migrate` service applies forward-only migrations before API, upload finalizer, and worker startup. Migration `0002_resumable_uploads.sql` adds persistent sessions, validated parts, and cross-process part claims. Migration `0003_job_origin_and_controls.sql` rebuilds the constrained job tables for provenance, queue-entry time, pausing/paused states, and fencing-compatible attempt outcomes, then adds origin to upload sessions. No reset is required. To update `whisper.cpp`, review the official release and server contract, update the pinned tag and model checksum in `scripts/setup-macos-whisper.sh`, rerun tests and the native E2E, then rebuild on the host. Do not silently track `master`.
 
 ## API key rotation and network exposure
 
-Generate a new key, replace `API_KEY` in `.env`, then recreate authenticated services:
+Generate new independent values, replace `API_KEY` and `WEB_PROXY_TOKEN` in `.env`, then recreate authenticated services:
 
 ```sh
 docker compose up -d --force-recreate api upload-finalizer worker frontend
 ```
 
-Existing direct API clients immediately lose access. The frontend proxy picks up the new key when its container is recreated. The key is timing-safe compared, redacted from structured logs, and required at startup unless explicit `TEST_MODE=true` is used by tests.
+Existing direct API clients immediately lose access. The frontend proxy and API pick up both values when their containers are recreated. Both are timing-safe compared where applicable, redacted from structured logs, and required at production startup unless explicit `TEST_MODE=true` is used by tests.
 
 The default API bind is `127.0.0.1`, not the LAN. Remote access requires an explicit authenticated TLS reverse proxy or a private network such as Tailscale. Do not change the Compose port to `0.0.0.0` without that layer. CORS is disabled unless exact `CORS_ORIGINS` are configured. Rate limiting is IP-based; when using a trusted reverse proxy, set `TRUST_PROXY=true` only after the proxy overwrites forwarding headers, or clients can spoof addresses. Rate limiting is process-local and is not a multi-host quota system.
 
@@ -253,13 +266,13 @@ pnpm --filter whisper-hub-backend dev:api
 pnpm dev:frontend
 ```
 
-Vite listens only on `127.0.0.1:4173`, reads the root `.env` server-side to authenticate `/api`, and proxies `/api` and `/health` to `http://127.0.0.1:3000`. If the local API uses a different port, set the development-only proxy target; neither it nor the API key is included in the browser bundle:
+Vite listens only on `127.0.0.1:4173`, reads the root `.env` server-side, and injects both secrets only into its `/web-api` development proxy. It also proxies ordinary `/api` as direct-API traffic and `/health` to `http://127.0.0.1:3000`. If the local API uses a different port, set the development-only proxy target; neither it nor either secret is included in the browser bundle:
 
 ```sh
 VITE_PROXY_TARGET=http://127.0.0.1:33000 pnpm dev:frontend
 ```
 
-Frontend production assets are built with `pnpm build:frontend`. `docker compose up -d` builds and starts the frontend, API, upload finalizer, and worker. Nginx adds bearer authorization from its server-side `API_KEY` environment and disables request buffering; the secret is never compiled into browser assets. The 251 MiB Nginx ceiling retains the legacy multipart endpoint while resumable requests remain at 20 MiB. It never proxies the native provider port.
+Frontend production assets are built with `pnpm build:frontend`. `docker compose up -d` builds and starts the frontend, API, upload finalizer, and worker. Nginx adds bearer authorization and the provenance marker from server-side environment only on `/web-api`, and disables request buffering; the secrets are never compiled into browser assets. The 251 MiB Nginx ceiling retains the legacy multipart endpoint while resumable requests remain at 20 MiB. It never proxies the native provider port.
 
 ### Resumable upload limits and Cloudflare
 
@@ -288,7 +301,7 @@ WHISPER_BASE_URL=http://127.0.0.1:8080 \
 pnpm test
 ```
 
-Before accepting a Mac mini deployment, also queue three files and observe one processing job, restart the worker during processing and wait for lease recovery, stop/restart the native provider to exercise backoff, download UTF-8 TXT/SRT/JSON, and verify ports 3000 and 8080 from another host. This repository cannot claim those hardware and network checks passed until run on the target Mac.
+Before accepting a Mac mini deployment, submit both browser and direct API files and verify grouping while preserving shared FIFO order. Upload a file larger than 100 MB through the configured Cloudflare route. Pause an active job, resume it from the beginning, cancel another, and confirm no late result appears. Restart the worker while `pausing` and verify recovery to `paused`. Also exercise provider backoff, download UTF-8 TXT/SRT/JSON, and verify ports 3000 and 8080 from another host. This repository cannot claim those hardware and network checks passed until run on the target Mac.
 
 ## Scope
 

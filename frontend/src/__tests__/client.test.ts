@@ -3,7 +3,7 @@ import { ApiClient } from '../api/client';
 import { ContractError } from '../api/types';
 
 const summary = {
-  id: 'job-1', status: 'queued', phase: null, createdAt: '2026-10-28T10:00:00Z', updatedAt: '2026-10-28T10:00:00Z',
+  id: 'job-1', origin: 'api', status: 'queued', phase: null, createdAt: '2026-10-28T10:00:00Z', updatedAt: '2026-10-28T10:00:00Z',
   originalFilename: 'sample.wav', attempts: 0, queuePosition: 1, error: null,
 };
 
@@ -12,6 +12,12 @@ function json(value: unknown, status = 200): Response {
 }
 
 describe('ApiClient', () => {
+  it('uses the trusted same-origin web route by default', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json({ items: [], nextCursor: null }));
+    await new ApiClient('', undefined, fetcher).listJobs({ origin: 'web' });
+    expect(fetcher.mock.calls[0]?.[0]).toBe('/web-api/v1/jobs?limit=25&origin=web');
+  });
+
   it('lets the same-origin proxy provide authorization', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json({ items: [], nextCursor: null }));
     const client = new ApiClient('', '/api/v1', fetcher);
@@ -38,7 +44,7 @@ describe('ApiClient', () => {
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async (_url, init) => {
       request = init;
       return json({
-        id: 'new-job', status: 'queued', phase: null, createdAt: '2026-10-28T10:00:00Z', queuePosition: 1,
+        id: 'new-job', origin: 'web', status: 'queued', phase: null, createdAt: '2026-10-28T10:00:00Z', queuePosition: 1,
         links: { self: '/api/v1/jobs/new-job', results: '/api/v1/jobs/new-job/results' },
       }, 202);
     });
@@ -92,5 +98,14 @@ describe('ApiClient', () => {
     const [url, init] = fetcher.mock.calls[0]!;
     expect(url).toBe('/api/v1/jobs/opaque%2Fid/results/txt');
     expect(new Headers(init?.headers).get('authorization')).toBe('Bearer secret-key');
+  });
+
+  it('calls pause and resume mutation routes', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => json(summary, 202));
+    const client = new ApiClient('', '/api/v1', fetcher);
+    await client.pauseJob('job-1');
+    await client.resumeJob('job-1');
+    expect(fetcher).toHaveBeenNthCalledWith(1, '/api/v1/jobs/job-1/pause', expect.objectContaining({ method: 'POST' }));
+    expect(fetcher).toHaveBeenNthCalledWith(2, '/api/v1/jobs/job-1/resume', expect.objectContaining({ method: 'POST' }));
   });
 });

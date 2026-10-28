@@ -9,6 +9,7 @@ function errorFor(job: Job): { code: string; message: string } | null {
 export function jobSummary(job: Job, repository: JobRepository) {
   return {
     id: job.id,
+    origin: job.origin,
     status: job.status,
     phase: job.phase,
     createdAt: job.createdAt,
@@ -23,6 +24,7 @@ export function jobSummary(job: Job, repository: JobRepository) {
 export function jobDetail(job: Job, repository: JobRepository) {
   return {
     id: job.id,
+    origin: job.origin,
     status: job.status,
     phase: job.phase,
     createdAt: job.createdAt,

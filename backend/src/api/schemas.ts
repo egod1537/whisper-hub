@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { jobPhases, jobStatuses, outputFormats } from '../shared/queue/types.js';
+import { jobOrigins, jobPhases, jobStatuses, outputFormats } from '../shared/queue/types.js';
 
 export const errorResponseSchema = z.object({
   error: z.object({
@@ -12,6 +12,7 @@ export const errorResponseSchema = z.object({
 
 export const jobSummarySchema = z.object({
   id: z.string(),
+  origin: z.enum(jobOrigins),
   status: z.enum(jobStatuses),
   phase: z.enum(jobPhases).nullable(),
   createdAt: z.iso.datetime(),
@@ -24,6 +25,7 @@ export const jobSummarySchema = z.object({
 
 export const jobDetailSchema = z.object({
   id: z.string(),
+  origin: z.enum(jobOrigins),
   status: z.enum(jobStatuses),
   phase: z.enum(jobPhases).nullable(),
   createdAt: z.iso.datetime(),
@@ -42,6 +44,7 @@ export const jobDetailSchema = z.object({
 
 export const createJobResponseSchema = z.object({
   id: z.string(),
+  origin: z.enum(jobOrigins),
   status: z.enum(jobStatuses),
   phase: z.enum(jobPhases).nullable(),
   createdAt: z.iso.datetime(),
@@ -53,6 +56,7 @@ export const idParamsSchema = z.object({ id: z.string().min(1).max(128) });
 export const resultParamsSchema = idParamsSchema.extend({ format: z.enum(outputFormats) });
 export const listQuerySchema = z.object({
   status: z.enum(jobStatuses).optional(),
+  origin: z.enum(jobOrigins).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   cursor: z.string().max(1_024).optional(),
 });
@@ -65,7 +69,10 @@ export const resultsSchema = z.object({
 
 export const systemStatusSchema = z.object({
   provider: z.object({ reachable: z.boolean(), model: z.string() }),
-  jobs: z.object({ processing: z.number().int(), queued: z.number().int() }),
+  jobs: z.object({
+    processing: z.number().int(), queued: z.number().int(), paused: z.number().int(),
+    origins: z.object({ web: z.number().int(), api: z.number().int(), unknown: z.number().int() }),
+  }),
   worker: z.object({ fresh: z.boolean(), lastHeartbeatAt: z.string().nullable() }),
   uploads: z.object({ active: z.number().int(), stagedBytes: z.number().int(), finalizing: z.number().int() }),
 });

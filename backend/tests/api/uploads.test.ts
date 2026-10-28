@@ -9,15 +9,15 @@ import { resolveInside } from '../../src/shared/storage/paths.js';
 import { uploadPartRelativePath } from '../../src/shared/uploads/paths.js';
 import { UploadRepository } from '../../src/shared/uploads/repository.js';
 import type { TestContext } from '../helpers.js';
-import { authHeaders, createTestContext } from '../helpers.js';
+import { authHeaders, createTestContext, webHeaders } from '../helpers.js';
 
 let context: TestContext;
 beforeEach(async () => { context = await createTestContext({ UPLOAD_CHUNK_SIZE_BYTES: '1048576' }); });
 afterEach(async () => context.close());
 
-async function createUpload(sizeBytes: number, key = 'resumable-key', expectedSha256?: string) {
+async function createUpload(sizeBytes: number, key = 'resumable-key', expectedSha256?: string, headers: Record<string, string> = authHeaders) {
   return context.app.inject({
-    method: 'POST', url: '/api/v1/uploads', headers: { ...authHeaders, 'idempotency-key': key, 'content-type': 'application/json' },
+    method: 'POST', url: '/api/v1/uploads', headers: { ...headers, 'idempotency-key': key, 'content-type': 'application/json' },
     payload: { filename: '../lecture.wav', sizeBytes, ...(expectedSha256 ? { sha256: expectedSha256 } : {}), language: 'ko', formats: ['json', 'txt'] },
   });
 }
@@ -45,6 +45,11 @@ describe('resumable upload API', () => {
     expect(replay.statusCode).toBe(200);
     expect(replay.json().uploadId).toBe(first.json().uploadId);
     expect((await createUpload(1_048_580)).statusCode).toBe(409);
+    const spoofed = await context.app.inject({
+      method: 'POST', url: '/api/v1/uploads', headers: { ...authHeaders, 'content-type': 'application/json' },
+      payload: { filename: 'spoof.wav', sizeBytes: 3, language: 'ko', formats: ['txt'], origin: 'web' },
+    });
+    expect(spoofed.statusCode).toBe(422);
   });
 
   it('streams exact chunks, makes replay idempotent, and rejects conflicts', async () => {
@@ -121,7 +126,7 @@ describe('resumable upload API', () => {
   it('finalizes asynchronously into exactly one queued job', async () => {
     const file = Buffer.from('assembled-audio');
     const fullHash = createHash('sha256').update(file).digest('hex');
-    const created = await createUpload(file.length, 'finalize-key', fullHash);
+    const created = await createUpload(file.length, 'finalize-key', fullHash, webHeaders);
     const uploadId = created.json().uploadId as string;
     expect((await putPart(uploadId, 0, file)).statusCode).toBe(201);
     const completing = await context.app.inject({ method: 'POST', url: `/api/v1/uploads/${uploadId}/complete`, headers: authHeaders });
@@ -141,7 +146,7 @@ describe('resumable upload API', () => {
     const status = await context.app.inject({ method: 'GET', url: `/api/v1/uploads/${uploadId}`, headers: authHeaders });
     expect(status.json()).toMatchObject({ status: 'completed', receivedParts: [], jobId: expect.any(String) });
     const jobId = status.json().jobId as string;
-    expect(context.repository.get(jobId)).toMatchObject({ status: 'queued', sourcePath: sourceRelativePath(jobId), fileSizeBytes: file.length });
+    expect(context.repository.get(jobId)).toMatchObject({ status: 'queued', origin: 'web', sourcePath: sourceRelativePath(jobId), fileSizeBytes: file.length });
     expect(fs.readFileSync(path.join(context.directory, sourceRelativePath(jobId)))).toEqual(file);
     const repeated = await context.app.inject({ method: 'POST', url: `/api/v1/uploads/${uploadId}/complete`, headers: authHeaders });
     expect(repeated.statusCode).toBe(200);

@@ -1,5 +1,7 @@
-export const jobStatuses = ['queued', 'processing', 'completed', 'failed', 'canceled'] as const;
+export const jobStatuses = ['queued', 'processing', 'pausing', 'paused', 'completed', 'failed', 'canceled'] as const;
 export type JobStatus = (typeof jobStatuses)[number];
+export const jobOrigins = ['web', 'api', 'unknown'] as const;
+export type JobOrigin = (typeof jobOrigins)[number];
 
 export const jobPhases = ['validating', 'converting', 'transcribing', 'exporting'] as const;
 export type JobPhase = (typeof jobPhases)[number];
@@ -16,6 +18,7 @@ export interface JobError {
 
 export interface JobSummary {
   id: string;
+  origin: JobOrigin;
   status: JobStatus;
   phase: JobPhase | null;
   createdAt: string;
@@ -37,6 +40,7 @@ export interface JobDetail extends JobSummary {
 
 export interface CreateJobResponse {
   id: string;
+  origin: JobOrigin;
   status: JobStatus;
   phase: JobPhase | null;
   createdAt: string;
@@ -56,7 +60,7 @@ export interface ResultsManifest {
 
 export interface SystemStatus {
   provider: { reachable: boolean; model: string };
-  jobs: { processing: number; queued: number };
+  jobs: { processing: number; queued: number; paused: number; origins: Record<JobOrigin, number> };
   worker: { fresh: boolean; lastHeartbeatAt: string | null };
   uploads: { active: number; stagedBytes: number; finalizing: number };
 }
@@ -149,6 +153,7 @@ export function parseJobSummary(value: unknown): JobSummary {
   const item = record(value);
   return {
     id: string(item.id),
+    origin: enumValue(item.origin, jobOrigins),
     status: enumValue(item.status, jobStatuses),
     phase: nullableEnum(item.phase, jobPhases),
     createdAt: string(item.createdAt),
@@ -180,6 +185,7 @@ export function parseCreateJob(value: unknown): CreateJobResponse {
   const links = record(item.links);
   return {
     id: string(item.id),
+    origin: enumValue(item.origin, jobOrigins),
     status: enumValue(item.status, jobStatuses),
     phase: nullableEnum(item.phase, jobPhases),
     createdAt: string(item.createdAt),
@@ -214,7 +220,13 @@ export function parseSystemStatus(value: unknown): SystemStatus {
   const uploads = record(item.uploads);
   return {
     provider: { reachable: boolean(provider.reachable), model: string(provider.model) },
-    jobs: { processing: number(jobs.processing), queued: number(jobs.queued) },
+    jobs: {
+      processing: number(jobs.processing), queued: number(jobs.queued), paused: number(jobs.paused),
+      origins: (() => {
+        const origins = record(jobs.origins);
+        return { web: number(origins.web), api: number(origins.api), unknown: number(origins.unknown) };
+      })(),
+    },
     worker: { fresh: boolean(worker.fresh), lastHeartbeatAt: nullableString(worker.lastHeartbeatAt) },
     uploads: { active: number(uploads.active), stagedBytes: number(uploads.stagedBytes), finalizing: number(uploads.finalizing) },
   };

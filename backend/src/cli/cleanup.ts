@@ -52,7 +52,7 @@ async function cleanup(): Promise<void> {
     const deleted = db.prepare(`DELETE FROM jobs WHERE id = ? AND status = ?`).run(row.id, row.status);
     if (deleted.changes !== 1) continue;
     await removePath(path.dirname(resolveInside(config.dataDir, row.source_path)));
-    if (row.result_base_path) await removePath(resolveInside(config.dataDir, row.result_base_path));
+    await removePath(resolveInside(config.dataDir, path.posix.join('results', row.id)));
   }
   const expiredIds = new Set(expired.map((row) => row.id));
   for (const row of sourceOnly) {

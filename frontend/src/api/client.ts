@@ -14,6 +14,7 @@ import {
   type CreateUploadResponse,
   type CreateJobResponse,
   type JobDetail,
+  type JobOrigin,
   type JobsPage,
   type JobSummary,
   type Language,
@@ -37,7 +38,7 @@ export interface DownloadedResult {
 }
 
 export interface WhisperApi {
-  listJobs(options?: { limit?: number; cursor?: string; signal?: AbortSignal }): Promise<JobsPage>;
+  listJobs(options?: { limit?: number; cursor?: string; origin?: JobOrigin; signal?: AbortSignal }): Promise<JobsPage>;
   getJob(id: string, signal?: AbortSignal): Promise<JobDetail>;
   getSystemStatus(signal?: AbortSignal): Promise<SystemStatus>;
   createJob(request: UploadRequest): Promise<CreateJobResponse>;
@@ -47,6 +48,8 @@ export interface WhisperApi {
   completeUpload(uploadId: string, signal?: AbortSignal): Promise<CompleteUploadResponse>;
   abortUpload(uploadId: string, signal?: AbortSignal): Promise<void>;
   cancelJob(id: string, signal?: AbortSignal): Promise<JobSummary>;
+  pauseJob(id: string, signal?: AbortSignal): Promise<JobSummary>;
+  resumeJob(id: string, signal?: AbortSignal): Promise<JobSummary>;
   retryJob(id: string, signal?: AbortSignal): Promise<JobSummary>;
   getResults(id: string, signal?: AbortSignal): Promise<ResultsManifest>;
   fetchResultText(id: string, signal?: AbortSignal): Promise<string>;
@@ -139,7 +142,7 @@ export class ApiClient implements WhisperApi {
 
   constructor(
     private readonly apiKey = '',
-    baseUrl = '/api/v1',
+    baseUrl = '/web-api/v1',
     private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
   ) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
@@ -162,9 +165,10 @@ export class ApiClient implements WhisperApi {
     }
   }
 
-  async listJobs(options: { limit?: number; cursor?: string; signal?: AbortSignal } = {}): Promise<JobsPage> {
+  async listJobs(options: { limit?: number; cursor?: string; origin?: JobOrigin; signal?: AbortSignal } = {}): Promise<JobsPage> {
     const query = new URLSearchParams({ limit: String(options.limit ?? 25) });
     if (options.cursor) query.set('cursor', options.cursor);
+    if (options.origin) query.set('origin', options.origin);
     return parseJobsPage(await this.json(`/jobs?${query.toString()}`, { signal: options.signal }));
   }
 
@@ -217,6 +221,14 @@ export class ApiClient implements WhisperApi {
 
   async cancelJob(id: string, signal?: AbortSignal): Promise<JobSummary> {
     return parseJobSummary(await this.json(`/jobs/${safeId(id)}`, { method: 'DELETE', signal }));
+  }
+
+  async pauseJob(id: string, signal?: AbortSignal): Promise<JobSummary> {
+    return parseJobSummary(await this.json(`/jobs/${safeId(id)}/pause`, { method: 'POST', signal }));
+  }
+
+  async resumeJob(id: string, signal?: AbortSignal): Promise<JobSummary> {
+    return parseJobSummary(await this.json(`/jobs/${safeId(id)}/resume`, { method: 'POST', signal }));
   }
 
   async retryJob(id: string, signal?: AbortSignal): Promise<JobSummary> {

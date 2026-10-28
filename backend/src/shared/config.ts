@@ -16,6 +16,7 @@ const configSchema = z
     DB_PATH: z.string().min(1).optional(),
     WHISPER_BASE_URL: z.string().url().default('http://host.docker.internal:8080'),
     API_KEY: z.string().min(16).optional(),
+    WEB_PROXY_TOKEN: z.string().min(32).optional(),
     MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(262_144_000),
     MAX_RESUMABLE_UPLOAD_BYTES: z.coerce.number().int().positive().max(2_147_483_648).default(2_147_483_648),
     UPLOAD_CHUNK_SIZE_BYTES: z.coerce.number().int().min(1_048_576).max(20_971_520).default(20_971_520),
@@ -46,6 +47,9 @@ const configSchema = z
     if (!value.TEST_MODE && !value.API_KEY) {
       ctx.addIssue({ code: 'custom', path: ['API_KEY'], message: 'API_KEY is required unless TEST_MODE=true' });
     }
+    if (!value.TEST_MODE && !value.WEB_PROXY_TOKEN) {
+      ctx.addIssue({ code: 'custom', path: ['WEB_PROXY_TOKEN'], message: 'WEB_PROXY_TOKEN is required unless TEST_MODE=true' });
+    }
     if (Math.ceil(value.MAX_RESUMABLE_UPLOAD_BYTES / value.UPLOAD_CHUNK_SIZE_BYTES) > 10_000) {
       ctx.addIssue({ code: 'custom', path: ['UPLOAD_CHUNK_SIZE_BYTES'], message: 'Resumable uploads may not exceed 10,000 chunks' });
     }
@@ -60,6 +64,7 @@ export type Config = Readonly<{
   dbPath: string;
   whisperBaseUrl: string;
   apiKey?: string;
+  webProxyToken?: string;
   maxUploadBytes: number;
   maxResumableUploadBytes: number;
   uploadChunkSizeBytes: number;
@@ -91,6 +96,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = configSchema.parse(env);
   const dataDir = path.resolve(parsed.DATA_DIR);
   const optionalApiKey = parsed.API_KEY === undefined ? {} : { apiKey: parsed.API_KEY };
+  const optionalWebProxyToken = parsed.WEB_PROXY_TOKEN === undefined ? {} : { webProxyToken: parsed.WEB_PROXY_TOKEN };
   return Object.freeze({
     nodeEnv: parsed.NODE_ENV,
     testMode: parsed.TEST_MODE,
@@ -100,6 +106,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dbPath: path.resolve(parsed.DB_PATH ?? path.join(dataDir, 'whisper-hub.sqlite')),
     whisperBaseUrl: parsed.WHISPER_BASE_URL.replace(/\/$/, ''),
     ...optionalApiKey,
+    ...optionalWebProxyToken,
     maxUploadBytes: parsed.MAX_UPLOAD_BYTES,
     maxResumableUploadBytes: parsed.MAX_RESUMABLE_UPLOAD_BYTES,
     uploadChunkSizeBytes: parsed.UPLOAD_CHUNK_SIZE_BYTES,

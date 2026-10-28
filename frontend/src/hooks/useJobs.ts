@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError, readableError, type WhisperApi } from '../api/client';
-import type { CreateJobResponse, JobDetail, JobSummary, SystemStatus } from '../api/types';
+import type { CreateJobResponse, JobDetail, JobOrigin, JobSummary, SystemStatus } from '../api/types';
 
 const ACTIVE_POLL_MS = 2_500;
 const BACKGROUND_POLL_MS = 10_000;
@@ -10,7 +10,7 @@ export function pollDelayForFailure(failures: number): number {
 }
 
 function active(job: JobSummary): boolean {
-  return job.status === 'queued' || job.status === 'processing';
+  return job.status === 'queued' || job.status === 'processing' || job.status === 'pausing';
 }
 
 function mergeJobs(current: JobSummary[], incoming: JobSummary[]): JobSummary[] {
@@ -33,11 +33,13 @@ export interface JobsController {
   refresh(): void;
   loadMore(): Promise<void>;
   addCreated(job: CreateJobResponse, originalFilename: string): void;
-  cancelJob(id: string): Promise<void>;
-  retryJob(id: string): Promise<void>;
+  cancelJob(id: string): Promise<boolean>;
+  pauseJob(id: string): Promise<boolean>;
+  resumeJob(id: string): Promise<boolean>;
+  retryJob(id: string): Promise<boolean>;
 }
 
-export function useJobs(api: WhisperApi | null, onUnauthorized: () => void): JobsController {
+export function useJobs(api: WhisperApi | null, onUnauthorized: () => void, origin?: JobOrigin): JobsController {
   const [jobs, setJobs] = useState<JobSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedJob, setSelectedJob] = useState<JobDetail | null>(null);
@@ -52,6 +54,14 @@ export function useJobs(api: WhisperApi | null, onUnauthorized: () => void): Job
   const hasJobs = useRef(false);
 
   useEffect(() => { hasJobs.current = jobs.length > 0; }, [jobs.length]);
+
+  useEffect(() => {
+    setJobs([]);
+    setSelectedId(null);
+    setSelectedJob(null);
+    setNextCursor(null);
+    hasJobs.current = false;
+  }, [origin]);
 
   useEffect(() => {
     if (!api) {
@@ -83,7 +93,7 @@ export function useJobs(api: WhisperApi | null, onUnauthorized: () => void): Job
       if (!hasJobs.current) setLoading(true);
       try {
         const [page, status] = await Promise.all([
-          api.listJobs({ limit: 25, signal: controller.signal }),
+          api.listJobs({ limit: 25, origin, signal: controller.signal }),
           api.getSystemStatus(controller.signal),
         ]);
         if (disposed) return;
@@ -124,7 +134,7 @@ export function useJobs(api: WhisperApi | null, onUnauthorized: () => void): Job
       controller?.abort();
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [api, onUnauthorized, refreshVersion]);
+  }, [api, onUnauthorized, origin, refreshVersion]);
 
   const selectedMarker = useMemo(
     () => jobs.find((job) => job.id === selectedId)?.updatedAt ?? '',
@@ -158,18 +168,19 @@ export function useJobs(api: WhisperApi | null, onUnauthorized: () => void): Job
   const loadMore = useCallback(async () => {
     if (!api || !nextCursor) return;
     try {
-      const page = await api.listJobs({ limit: 25, cursor: nextCursor });
+      const page = await api.listJobs({ limit: 25, cursor: nextCursor, origin });
       setJobs((current) => mergeJobs(current, page.items));
       setNextCursor(page.nextCursor);
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 401) onUnauthorized();
       else setError(readableError(caught));
     }
-  }, [api, nextCursor, onUnauthorized]);
+  }, [api, nextCursor, onUnauthorized, origin]);
 
   const addCreated = useCallback((job: CreateJobResponse, originalFilename: string) => {
     const provisional: JobSummary = {
       id: job.id,
+      origin: job.origin,
       status: job.status,
       phase: job.phase,
       createdAt: job.createdAt,
@@ -179,22 +190,29 @@ export function useJobs(api: WhisperApi | null, onUnauthorized: () => void): Job
       queuePosition: job.queuePosition,
       error: null,
     };
-    setJobs((current) => [provisional, ...current.filter((item) => item.id !== job.id)]);
-    setSelectedId(job.id);
+    if (!origin || origin === job.origin) {
+      setJobs((current) => [provisional, ...current.filter((item) => item.id !== job.id)]);
+      setSelectedId(job.id);
+    }
     setRefreshVersion((value) => value + 1);
-  }, []);
+  }, [origin]);
 
-  const runAction = useCallback(async (id: string, action: 'cancel' | 'retry') => {
-    if (!api) return;
+  const runAction = useCallback(async (id: string, action: 'cancel' | 'pause' | 'resume' | 'retry'): Promise<boolean> => {
+    if (!api) return false;
     setPendingActionIds((current) => new Set([...current, id]));
     setError(null);
     try {
-      const updated = action === 'cancel' ? await api.cancelJob(id) : await api.retryJob(id);
+      const updated = action === 'cancel' ? await api.cancelJob(id)
+        : action === 'pause' ? await api.pauseJob(id)
+          : action === 'resume' ? await api.resumeJob(id)
+            : await api.retryJob(id);
       setJobs((current) => current.map((job) => job.id === id ? updated : job));
       setRefreshVersion((value) => value + 1);
+      return true;
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 401) onUnauthorized();
       else setError(readableError(caught));
+      return false;
     } finally {
       setPendingActionIds((current) => {
         const next = new Set(current);
@@ -220,6 +238,8 @@ export function useJobs(api: WhisperApi | null, onUnauthorized: () => void): Job
     loadMore,
     addCreated,
     cancelJob: (id) => runAction(id, 'cancel'),
+    pauseJob: (id) => runAction(id, 'pause'),
+    resumeJob: (id) => runAction(id, 'resume'),
     retryJob: (id) => runAction(id, 'retry'),
   };
 }

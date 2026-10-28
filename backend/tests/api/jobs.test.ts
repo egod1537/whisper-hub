@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { TestContext } from '../helpers.js';
-import { authHeaders, createTestContext, makeWav, multipart } from '../helpers.js';
+import { authHeaders, createTestContext, makeWav, multipart, webHeaders } from '../helpers.js';
 import { resultRelativePath, resolveInside } from '../../src/shared/storage/paths.js';
 
 let context: TestContext;
@@ -35,15 +35,16 @@ describe('jobs API', () => {
     const created = response.json();
     expect(created).toMatchObject({ status: 'queued', phase: null, queuePosition: 1 });
     const detail = await context.app.inject({ method: 'GET', url: created.links.self, headers: authHeaders });
-    expect(detail.json()).toMatchObject({ id: created.id, language: 'ko', formats: ['txt', 'srt', 'json'] });
+    expect(detail.json()).toMatchObject({ id: created.id, origin: 'api', language: 'ko', formats: ['txt', 'srt', 'json'] });
   });
 
   it('honors idempotency and rejects mismatches', async () => {
-    const first = await upload([], { 'idempotency-key': 'same-key' });
+    const first = await upload([], { ...webHeaders, 'idempotency-key': 'same-key' });
     const second = await upload([], { 'idempotency-key': 'same-key' });
     expect(first.statusCode).toBe(202);
     expect(second.statusCode).toBe(200);
     expect(second.json().id).toBe(first.json().id);
+    expect(second.json().origin).toBe('web');
     const conflict = await upload([{ name: 'language', value: 'ko' }], { 'idempotency-key': 'same-key' });
     expect(conflict.statusCode).toBe(409);
     expect(conflict.json().error.code).toBe('IDEMPOTENCY_CONFLICT');
@@ -54,6 +55,7 @@ describe('jobs API', () => {
     const unsupported = await context.app.inject({ method: 'POST', url: '/api/v1/jobs', headers: { ...authHeaders, 'content-type': `multipart/form-data; boundary=${form.boundary}` }, payload: form.body });
     expect(unsupported.statusCode).toBe(415);
     expect((await upload([{ name: 'prompt', value: 'ignored' }])).statusCode).toBe(422);
+    expect((await upload([{ name: 'origin', value: 'web' }])).statusCode).toBe(400);
     expect((await upload([{ name: 'language', value: 'not-a-language' }])).statusCode).toBe(422);
     expect((await upload([{ name: 'formats', value: 'txt,txt' }])).statusCode).toBe(422);
   });
@@ -69,7 +71,50 @@ describe('jobs API', () => {
     const canceled = await context.app.inject({ method: 'DELETE', url: `/api/v1/jobs/${id}`, headers: authHeaders });
     expect(canceled.statusCode).toBe(202);
     expect(canceled.json().status).toBe('canceled');
-    expect((await context.app.inject({ method: 'DELETE', url: `/api/v1/jobs/${id}`, headers: authHeaders })).statusCode).toBe(409);
+    expect((await context.app.inject({ method: 'DELETE', url: `/api/v1/jobs/${id}`, headers: authHeaders })).statusCode).toBe(202);
+  });
+
+  it('derives origin from the trusted proxy token and filters without allowing spoofing', async () => {
+    const direct = await upload();
+    const forged = await upload([], { 'x-whisper-hub-origin': 'web', 'x-whisper-hub-web-token': 'wrong-token-that-is-long-enough-to-look-real' });
+    const web = await upload([], webHeaders);
+    const secondWeb = await upload([], webHeaders);
+    expect(direct.json().origin).toBe('api');
+    expect(forged.json().origin).toBe('api');
+    expect(web.json().origin).toBe('web');
+
+    const webList = await context.app.inject({ method: 'GET', url: '/api/v1/jobs?origin=web&limit=1', headers: authHeaders });
+    expect(webList.json().items).toHaveLength(1);
+    expect(webList.json().nextCursor).toEqual(expect.any(String));
+    const webNext = await context.app.inject({
+      method: 'GET', url: `/api/v1/jobs?origin=web&limit=1&cursor=${encodeURIComponent(webList.json().nextCursor)}`, headers: authHeaders,
+    });
+    expect([webList.json().items[0].id, webNext.json().items[0].id].sort()).toEqual([web.json().id, secondWeb.json().id].sort());
+    expect(webNext.json().nextCursor).toBeNull();
+    const apiList = await context.app.inject({ method: 'GET', url: '/api/v1/jobs?origin=api', headers: authHeaders });
+    const apiItems = apiList.json<{ items: Array<{ origin: string }> }>().items;
+    expect(apiItems).toHaveLength(2);
+    expect(apiItems.every((job) => job.origin === 'api')).toBe(true);
+
+    const status = await context.app.inject({ method: 'GET', url: '/api/v1/system/status', headers: authHeaders });
+    expect(status.json().jobs.origins).toEqual({ web: 2, api: 2, unknown: 0 });
+    expect((await context.app.inject({ method: 'POST', url: '/web-api/v1/jobs', headers: webHeaders })).statusCode).toBe(404);
+  });
+
+  it('pauses, resumes at a new queue position, and permanently cancels', async () => {
+    const first = await upload();
+    const second = await upload();
+    const paused = await context.app.inject({ method: 'POST', url: `/api/v1/jobs/${first.json().id}/pause`, headers: authHeaders });
+    expect(paused.statusCode).toBe(202);
+    expect(paused.json()).toMatchObject({ status: 'paused', queuePosition: null });
+    expect(context.repository.claim('worker', 60)?.id).toBe(second.json().id);
+
+    const resumed = await context.app.inject({ method: 'POST', url: `/api/v1/jobs/${first.json().id}/resume`, headers: authHeaders });
+    expect(resumed.statusCode).toBe(202);
+    expect(resumed.json()).toMatchObject({ status: 'queued', queuePosition: 1 });
+    const canceled = await context.app.inject({ method: 'DELETE', url: `/api/v1/jobs/${first.json().id}`, headers: authHeaders });
+    expect(canceled.json().status).toBe('canceled');
+    expect((await context.app.inject({ method: 'POST', url: `/api/v1/jobs/${first.json().id}/resume`, headers: authHeaders })).statusCode).toBe(409);
   });
 
   it('returns result metadata and streams safe attachments only after completion', async () => {
@@ -82,7 +127,7 @@ describe('jobs API', () => {
     const resultDir = resolveInside(context.directory, relative);
     fs.mkdirSync(resultDir, { recursive: true });
     for (const format of ['txt', 'srt', 'json']) fs.writeFileSync(path.join(resultDir, `transcript.${format}`), 'result');
-    expect(context.repository.complete(id, 'test-worker', relative, { formats: ['txt', 'srt', 'json'] })).toBe(true);
+    expect(context.repository.complete(id, claimed!.leaseOwner!, relative, { formats: ['txt', 'srt', 'json'] })).toBe(true);
     const results = await context.app.inject({ method: 'GET', url: `/api/v1/jobs/${id}/results`, headers: authHeaders });
     expect(results.json().availableFormats).toEqual(['txt', 'srt', 'json']);
     const download = await context.app.inject({ method: 'GET', url: `/api/v1/jobs/${id}/results/txt`, headers: authHeaders });

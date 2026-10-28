@@ -43,7 +43,7 @@ export interface TestContext {
 export async function createTestContext(overrides: NodeJS.ProcessEnv = {}): Promise<TestContext> {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'whisper-hub-test-'));
   const config = loadConfig({
-    NODE_ENV: 'test', TEST_MODE: 'true', API_KEY: 'test-api-key-123456', DATA_DIR: directory,
+    NODE_ENV: 'test', TEST_MODE: 'true', API_KEY: 'test-api-key-123456', WEB_PROXY_TOKEN: 'test-web-proxy-token-1234567890123456', DATA_DIR: directory,
     DB_PATH: path.join(directory, 'db.sqlite'), LOG_LEVEL: 'silent', JOB_LEASE_SECONDS: '60',
     ...overrides,
   });
@@ -100,4 +100,5 @@ export function makeWav(durationMs = 100): Buffer {
 }
 
 export const authHeaders = { authorization: 'Bearer test-api-key-123456' };
+export const webHeaders = { ...authHeaders, 'x-whisper-hub-web-token': 'test-web-proxy-token-1234567890123456' };
 

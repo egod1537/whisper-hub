@@ -13,7 +13,7 @@ COPY frontend frontend
 RUN pnpm --filter whisper-hub-frontend build
 
 FROM nginx:1.29-alpine AS runtime
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=build /app/frontend/dist /usr/share/nginx/html
 EXPOSE 8080
 

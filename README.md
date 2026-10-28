@@ -75,7 +75,7 @@ The native setup uses the pinned official `whisper.cpp` tag `v1.9.5`, enables `G
    curl --fail http://127.0.0.1:4173/health/ready
    ```
 
-   Open <http://127.0.0.1:4173>, choose **API 키 설정**, and enter the same private key stored in `.env`. The key stays only in the current browser tab's memory: it is not written to local storage, cookies, URLs, logs, or the frontend bundle, and must be entered again after a refresh. The UI uses only same-origin `/api` and `/health` requests through Nginx.
+   Open <http://127.0.0.1:4173>. The UI uses only same-origin `/api` and `/health` requests through Nginx. Nginx injects the private key from its container environment, so the key is not placed in the browser, local storage, cookies, URLs, or the frontend bundle.
 
    Verify the host route from the worker network if provider connectivity fails:
 
@@ -141,7 +141,7 @@ All `/api/v1` routes and `/docs` require `Authorization: Bearer <API_KEY>`. Only
 
 An `Idempotency-Key` is 1–128 visible ASCII characters. Reusing it with identical content/options returns the existing job or session; different metadata/options returns `409`. The legacy single request is capped at 250 MiB. Resumable sessions default to 2 GiB total with 20 MiB requests and at most three concurrent browser requests. Worker-side `ffprobe` still validates the assembled media and independent two-hour duration limit.
 
-The browser uses resumable uploads for every file. It measures progress only after the server accepts a complete chunk, retries only network/429/5xx failures up to three times with backoff, and polls the asynchronous assembly phase before announcing a queued job. Refreshing discards the API key but preserves non-secret resume metadata (session ID, original filename/size/mtime, language, formats) in `localStorage`; the operator must re-enter the API key and reselect the same local file. File bytes and credentials are never persisted by the UI.
+The browser uses resumable uploads for every file. It measures progress only after the server accepts a complete chunk, retries only network/429/5xx failures up to three times with backoff, and polls the asynchronous assembly phase before announcing a queued job. Refreshing preserves only non-secret resume metadata (session ID, original filename/size/mtime, language, formats) in `localStorage`; the operator must reselect the same local file. File bytes and credentials are never persisted by the UI.
 
 The FIFO order is `(created_at, id)` among currently eligible queued jobs. A retry waiting for backoff does not block later eligible jobs. Queue position is best-effort, 1-based, and can change; there is no ETA.
 
@@ -226,10 +226,10 @@ The one-shot `migrate` service applies forward-only migrations before API, uploa
 Generate a new key, replace `API_KEY` in `.env`, then recreate authenticated services:
 
 ```sh
-docker compose up -d --force-recreate api upload-finalizer worker
+docker compose up -d --force-recreate api upload-finalizer worker frontend
 ```
 
-Existing clients immediately lose access. The key is timing-safe compared, redacted from structured logs, and required at startup unless explicit `TEST_MODE=true` is used by tests.
+Existing direct API clients immediately lose access. The frontend proxy picks up the new key when its container is recreated. The key is timing-safe compared, redacted from structured logs, and required at startup unless explicit `TEST_MODE=true` is used by tests.
 
 The default API bind is `127.0.0.1`, not the LAN. Remote access requires an explicit authenticated TLS reverse proxy or a private network such as Tailscale. Do not change the Compose port to `0.0.0.0` without that layer. CORS is disabled unless exact `CORS_ORIGINS` are configured. Rate limiting is IP-based; when using a trusted reverse proxy, set `TRUST_PROXY=true` only after the proxy overwrites forwarding headers, or clients can spoof addresses. Rate limiting is process-local and is not a multi-host quota system.
 
@@ -253,13 +253,13 @@ pnpm --filter whisper-hub-backend dev:api
 pnpm dev:frontend
 ```
 
-Vite listens only on `127.0.0.1:4173` and proxies `/api` and `/health` to `http://127.0.0.1:3000`. If the local API uses a different port, set the development-only proxy target; it is not included in the browser bundle:
+Vite listens only on `127.0.0.1:4173`, reads the root `.env` server-side to authenticate `/api`, and proxies `/api` and `/health` to `http://127.0.0.1:3000`. If the local API uses a different port, set the development-only proxy target; neither it nor the API key is included in the browser bundle:
 
 ```sh
 VITE_PROXY_TARGET=http://127.0.0.1:33000 pnpm dev:frontend
 ```
 
-Frontend production assets are built with `pnpm build:frontend`. `docker compose up -d` builds and starts the frontend, API, upload finalizer, and worker. Nginx forwards bearer authorization and disables request buffering. The 251 MiB Nginx ceiling retains the legacy multipart endpoint while resumable requests remain at 20 MiB. It never proxies the native provider port.
+Frontend production assets are built with `pnpm build:frontend`. `docker compose up -d` builds and starts the frontend, API, upload finalizer, and worker. Nginx adds bearer authorization from its server-side `API_KEY` environment and disables request buffering; the secret is never compiled into browser assets. The 251 MiB Nginx ceiling retains the legacy multipart endpoint while resumable requests remain at 20 MiB. It never proxies the native provider port.
 
 ### Resumable upload limits and Cloudflare
 

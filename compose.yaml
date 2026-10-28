@@ -83,6 +83,8 @@ services:
       dockerfile: frontend/Dockerfile
     image: whisper-hub-frontend:local
     restart: unless-stopped
+    environment:
+      API_KEY: ${API_KEY:?Set API_KEY in .env}
     depends_on:
       api:
         condition: service_healthy

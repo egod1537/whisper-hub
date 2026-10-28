@@ -138,7 +138,7 @@ export class ApiClient implements WhisperApi {
   private readonly baseUrl: string;
 
   constructor(
-    private readonly apiKey: string,
+    private readonly apiKey = '',
     baseUrl = '/api/v1',
     private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis),
   ) {
@@ -147,7 +147,7 @@ export class ApiClient implements WhisperApi {
 
   private async response(path: string, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers);
-    headers.set('Authorization', `Bearer ${this.apiKey}`);
+    if (this.apiKey) headers.set('Authorization', `Bearer ${this.apiKey}`);
     const response = await this.fetcher(`${this.baseUrl}${path}`, { ...init, headers });
     if (!response.ok) throw await errorFrom(response);
     return response;

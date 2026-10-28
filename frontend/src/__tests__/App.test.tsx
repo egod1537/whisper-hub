@@ -12,7 +12,7 @@ describe.each([360, 768, 1440])('App responsive smoke at %ipx', (width) => {
     expect(screen.getByRole('heading', { name: '새 전사 작업' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '작업 대기열' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '전사 결과' })).toBeInTheDocument();
-    expect(screen.getByLabelText('API 키')).toBeInTheDocument();
+    expect(screen.queryByLabelText('API 키')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '전사 시작' })).toBeVisible();
   });
 });

@@ -12,6 +12,15 @@ function json(value: unknown, status = 200): Response {
 }
 
 describe('ApiClient', () => {
+  it('lets the same-origin proxy provide authorization', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json({ items: [], nextCursor: null }));
+    const client = new ApiClient('', '/api/v1', fetcher);
+    await client.listJobs();
+
+    const [, init] = fetcher.mock.calls[0]!;
+    expect(new Headers(init?.headers).has('authorization')).toBe(false);
+  });
+
   it('sends bearer auth and parses the jobs contract', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(json({ items: [summary], nextCursor: null }));
     const client = new ApiClient('secret-key', '/api/v1', fetcher);

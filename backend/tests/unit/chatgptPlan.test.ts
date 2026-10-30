@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ChatGptPlanTranscriptPolisher } from '../../src/shared/postprocess/chatgptPlan.js';
+import { ChatGptPlanTranscriptPolisher, chatGptPlanInternals } from '../../src/shared/postprocess/chatgptPlan.js';
 
 const directories: string[] = [];
 
@@ -51,6 +51,25 @@ function polisher(file: string, fetchFn: typeof fetch, now: number) {
 }
 
 describe('ChatGPT plan transcript polishing', () => {
+  it.each([
+    ['subscription_sharing_usage_limit_exceeded', 'GPT_USAGE_LIMIT', false],
+    ['subscription_sharing_usage_unavailable', 'GPT_UNAVAILABLE', true],
+    ['subscription_sharing_user_not_eligible', 'GPT_NOT_ELIGIBLE', false],
+    ['subscription_sharing_invalid_user', 'GPT_AUTH_REQUIRED', false],
+    ['subscription_sharing_unsupported_capability', 'GPT_INVALID_RESPONSE', false],
+  ])('maps streamed %s failures to %s', (providerCode, code, retryable) => {
+    const body = `data: ${JSON.stringify({
+      type: 'response.failed',
+      response: { id: 'resp_test', error: { code: providerCode, message: 'redacted' } },
+    })}\n\n`;
+    try {
+      chatGptPlanInternals.parseSse(body);
+      expect.unreachable('expected the stream to fail');
+    } catch (error) {
+      expect(error).toMatchObject({ code, retryable, details: { providerCode, requestId: 'resp_test' } });
+    }
+  });
+
   it('polishes text while preserving timestamps and transcript metadata', async () => {
     const now = Date.now();
     const file = credentialsFile(now);

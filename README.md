@@ -186,6 +186,17 @@ Input is converted with fixed `ffmpeg` arguments to mono 16 kHz signed 16-bit PC
 
 `whisper.cpp v1.9.5` is requested with `/inference`, `response_format=verbose_json`, and the job language. SRT/VTT are produced only from real `start`/`end` segment timestamps. A provider response without reliable timestamps fails instead of inventing them. `auto` language detection requires the configured multilingual host model.
 
+### Production monitoring
+
+The `monitor` service checks the native Whisper provider, worker heartbeat, data-filesystem capacity, queue depth, recent terminal job failures, and every URL in `MONITOR_HEALTH_URLS`. Persistent conditions are debounced for `MONITOR_FAILURE_THRESHOLD` checks, repeated at `MONITOR_ALERT_REPEAT_MINUTES`, and followed by a resolved event after recovery. Terminal job failures alert immediately. The monitor has its own Docker healthcheck and structured logs:
+
+```sh
+docker compose up -d monitor
+docker compose logs -f monitor
+```
+
+Set `MONITOR_ALERT_WEBHOOK_URL` to an HTTPS endpoint to receive generic JSON alert payloads; when it is empty, alerts remain in the structured monitor logs. The production host configures `MONITOR_HEALTH_URLS` with the public frontend and API health endpoints so DNS, TLS, and the edge route are exercised. The monitoring service does not create or modify backups.
+
 ### Optional ChatGPT transcript polishing
 
 The worker can pass Whisper's text segments through the official ChatGPT sign-in token flow before publishing results. GPT may correct spacing, punctuation, and context-supported recognition mistakes, but it must preserve segment count, order, timestamps, meaning, and language. Requested `transcript.txt`, `.srt`, `.vtt`, and `.json` files contain the polished result; matching `transcript.raw.*` files remain beside them as the unmodified Whisper output. The JSON result and job metadata identify the post-processor and model. If polishing fails, the job follows the normal retry/failure policy instead of silently presenting raw text as polished output.

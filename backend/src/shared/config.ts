@@ -6,6 +6,11 @@ const booleanString = z
   .default('false')
   .transform((value) => value === 'true');
 
+const optionalHttpsUrl = z.preprocess(
+  (value) => value === '' ? undefined : value,
+  z.string().url().refine((value) => new URL(value).protocol === 'https:', 'Webhook URL must use HTTPS').optional(),
+);
+
 const configSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -42,6 +47,15 @@ const configSchema = z
     CHATGPT_POLISH_MODEL: z.string().min(1).default('gpt-5.6-sol'),
     CHATGPT_POLISH_TIMEOUT_MS: z.coerce.number().int().positive().default(600_000),
     CHATGPT_POLISH_CHUNK_CHARS: z.coerce.number().int().min(1_000).max(100_000).default(20_000),
+    MONITOR_INTERVAL_SECONDS: z.coerce.number().int().min(10).max(3_600).default(60),
+    MONITOR_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(10).default(3),
+    MONITOR_ALERT_REPEAT_MINUTES: z.coerce.number().int().min(5).max(1_440).default(60),
+    MONITOR_DISK_WARN_PERCENT: z.coerce.number().min(50).max(99).default(90),
+    MONITOR_MIN_FREE_BYTES: z.coerce.number().int().nonnegative().default(10_737_418_240),
+    MONITOR_QUEUE_WARN_COUNT: z.coerce.number().int().min(1).default(20),
+    MONITOR_HEALTH_URLS: z.string().default('http://api:3000/health/ready,http://frontend:8080/healthz'),
+    MONITOR_ALERT_WEBHOOK_URL: optionalHttpsUrl,
+    MONITOR_WEBHOOK_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(30_000).default(5_000),
     CORS_ORIGINS: z.string().optional(),
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
     RATE_LIMIT_WINDOW: z.string().default('1 minute'),
@@ -98,6 +112,15 @@ export type Config = Readonly<{
   chatGptPolishModel: string;
   chatGptPolishTimeoutMs: number;
   chatGptPolishChunkChars: number;
+  monitorIntervalSeconds: number;
+  monitorFailureThreshold: number;
+  monitorAlertRepeatMinutes: number;
+  monitorDiskWarnPercent: number;
+  monitorMinFreeBytes: number;
+  monitorQueueWarnCount: number;
+  monitorHealthUrls: string[];
+  monitorAlertWebhookUrl?: string;
+  monitorWebhookTimeoutMs: number;
   corsOrigins: string[];
   rateLimitMax: number;
   rateLimitWindow: string;
@@ -113,6 +136,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const dataDir = path.resolve(parsed.DATA_DIR);
   const optionalApiKey = parsed.API_KEY === undefined ? {} : { apiKey: parsed.API_KEY };
   const optionalWebProxyToken = parsed.WEB_PROXY_TOKEN === undefined ? {} : { webProxyToken: parsed.WEB_PROXY_TOKEN };
+  const optionalMonitorWebhook = parsed.MONITOR_ALERT_WEBHOOK_URL === undefined ? {} : { monitorAlertWebhookUrl: parsed.MONITOR_ALERT_WEBHOOK_URL };
+  const monitorHealthUrls = parsed.MONITOR_HEALTH_URLS.split(',').map((item) => item.trim()).filter(Boolean);
+  for (const healthUrl of monitorHealthUrls) new URL(healthUrl);
   return Object.freeze({
     nodeEnv: parsed.NODE_ENV,
     testMode: parsed.TEST_MODE,
@@ -148,6 +174,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     chatGptPolishModel: parsed.CHATGPT_POLISH_MODEL,
     chatGptPolishTimeoutMs: parsed.CHATGPT_POLISH_TIMEOUT_MS,
     chatGptPolishChunkChars: parsed.CHATGPT_POLISH_CHUNK_CHARS,
+    monitorIntervalSeconds: parsed.MONITOR_INTERVAL_SECONDS,
+    monitorFailureThreshold: parsed.MONITOR_FAILURE_THRESHOLD,
+    monitorAlertRepeatMinutes: parsed.MONITOR_ALERT_REPEAT_MINUTES,
+    monitorDiskWarnPercent: parsed.MONITOR_DISK_WARN_PERCENT,
+    monitorMinFreeBytes: parsed.MONITOR_MIN_FREE_BYTES,
+    monitorQueueWarnCount: parsed.MONITOR_QUEUE_WARN_COUNT,
+    monitorHealthUrls,
+    ...optionalMonitorWebhook,
+    monitorWebhookTimeoutMs: parsed.MONITOR_WEBHOOK_TIMEOUT_MS,
     corsOrigins: parsed.CORS_ORIGINS?.split(',').map((item) => item.trim()).filter(Boolean) ?? [],
     rateLimitMax: parsed.RATE_LIMIT_MAX,
     rateLimitWindow: parsed.RATE_LIMIT_WINDOW,

@@ -118,3 +118,32 @@ services:
         condition: service_completed_successfully
     stop_grace_period: 10s
 
+  monitor:
+    <<: *common
+    command: ["node", "dist/monitor/main.js"]
+    environment:
+      <<: *common-environment
+      MONITOR_INTERVAL_SECONDS: ${MONITOR_INTERVAL_SECONDS:-60}
+      MONITOR_FAILURE_THRESHOLD: ${MONITOR_FAILURE_THRESHOLD:-3}
+      MONITOR_ALERT_REPEAT_MINUTES: ${MONITOR_ALERT_REPEAT_MINUTES:-60}
+      MONITOR_DISK_WARN_PERCENT: ${MONITOR_DISK_WARN_PERCENT:-90}
+      MONITOR_MIN_FREE_BYTES: ${MONITOR_MIN_FREE_BYTES:-10737418240}
+      MONITOR_QUEUE_WARN_COUNT: ${MONITOR_QUEUE_WARN_COUNT:-20}
+      MONITOR_HEALTH_URLS: ${MONITOR_HEALTH_URLS:-http://api:3000/health/ready,http://frontend:8080/healthz}
+      MONITOR_ALERT_WEBHOOK_URL: ${MONITOR_ALERT_WEBHOOK_URL:-}
+      MONITOR_WEBHOOK_TIMEOUT_MS: ${MONITOR_WEBHOOK_TIMEOUT_MS:-5000}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    stop_grace_period: 10s
+    healthcheck:
+      test: ["CMD", "node", "-e", "const fs=require('node:fs');const age=Date.now()-fs.statSync('/tmp/whisper-hub-monitor-heartbeat').mtimeMs;const limit=(Number(process.env.MONITOR_INTERVAL_SECONDS)||60)*3000;if(age>limit)process.exit(1)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+

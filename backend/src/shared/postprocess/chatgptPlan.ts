@@ -197,12 +197,57 @@ function parseSse(body: string): string {
       completed = true;
       completedOutput = responseOutputText(event.response);
     }
-    if (event.type === 'response.failed' || event.type === 'error') {
-      throw new AppError('GPT_UNAVAILABLE', 'ChatGPT could not polish the transcript.', 503, true);
+    if (event.type === 'response.failed') {
+      const response = isRecord(event.response) ? event.response : null;
+      const error = response && isRecord(response.error) ? response.error : null;
+      const code = error && typeof error.code === 'string' ? error.code : null;
+      const requestId = response && typeof response.id === 'string' ? response.id : null;
+      throw chatGptError(code, undefined, requestId);
+    }
+    if (event.type === 'response.incomplete') {
+      throw new AppError('GPT_UNAVAILABLE', 'ChatGPT returned an incomplete response.', 503, true);
+    }
+    if (event.type === 'error') {
+      const code = typeof event.code === 'string' ? event.code : isRecord(event.error) && typeof event.error.code === 'string' ? event.error.code : null;
+      throw chatGptError(code);
     }
   }
   if (!completed) throw new AppError('GPT_INVALID_RESPONSE', 'ChatGPT response ended before completion.', 502, true);
   return output || completedOutput;
+}
+
+function chatGptError(code: string | null, status?: number, requestId?: string | null): AppError {
+  const details = {
+    ...(code ? { providerCode: code } : {}),
+    ...(requestId ? { requestId } : {}),
+  };
+  if (code === 'subscription_sharing_usage_limit_exceeded') {
+    return new AppError('GPT_USAGE_LIMIT', 'ChatGPT plan usage limit was reached.', 429, false, undefined, details);
+  }
+  if (code === 'subscription_sharing_user_not_eligible') {
+    return new AppError('GPT_NOT_ELIGIBLE', 'This ChatGPT account or workspace is not eligible for plan usage.', 403, false, undefined, details);
+  }
+  if (code === 'subscription_sharing_invalid_user'
+    || code === 'chatpass_v2_scope_not_authorized'
+    || code === 'chatpass_v2_invalid_authorization_context') {
+    return new AppError('GPT_AUTH_REQUIRED', 'ChatGPT plan authorization must be renewed.', 503, false, undefined, details);
+  }
+  if (code === 'subscription_sharing_unsupported_capability' || code === 'subscription_sharing_route_not_supported') {
+    return new AppError('GPT_INVALID_RESPONSE', 'ChatGPT plan routing does not support this request.', 502, false, undefined, details);
+  }
+  if (code === 'subscription_sharing_usage_unavailable'
+    || code === 'subscription_sharing_user_unavailable'
+    || code === 'rate_limit_exceeded'
+    || code === 'server_error') {
+    return new AppError('GPT_UNAVAILABLE', 'ChatGPT is temporarily unavailable.', 503, true, undefined, details);
+  }
+  if (status === 401 || status === 403) {
+    return new AppError('GPT_AUTH_REQUIRED', 'ChatGPT plan authorization was rejected.', 503, false, undefined, details);
+  }
+  if (status === 429 || (status !== undefined && status >= 500)) {
+    return new AppError('GPT_UNAVAILABLE', 'ChatGPT is temporarily unavailable.', 503, true, undefined, details);
+  }
+  return new AppError('GPT_INVALID_RESPONSE', 'ChatGPT rejected the transcript polishing request.', 502, false, undefined, details);
 }
 
 function validatePolishedSegments(value: unknown, expected: readonly PolishedSegment[]): PolishedSegment[] {
@@ -359,14 +404,7 @@ export class ChatGptPlanTranscriptPolisher implements TranscriptPolisher {
     } catch {
       // The status code still gives us a safe, non-secret error classification.
     }
-    if (response.status === 401) return new AppError('GPT_AUTH_REQUIRED', 'ChatGPT plan authorization expired. Sign in again.', 503);
-    if (response.status === 429 && code === 'subscription_sharing_usage_limit_exceeded') {
-      return new AppError('GPT_USAGE_LIMIT', 'ChatGPT plan usage limit was reached.', 429);
-    }
-    if (response.status === 429 || response.status >= 500) {
-      return new AppError('GPT_UNAVAILABLE', 'ChatGPT is temporarily unavailable.', 503, true);
-    }
-    return new AppError('GPT_INVALID_RESPONSE', 'ChatGPT rejected the transcript polishing request.', 502);
+    return chatGptError(code, response.status, response.headers.get('x-request-id'));
   }
 
   private async getCredentials(forceRefresh: boolean): Promise<StoredCredentials> {
@@ -458,4 +496,4 @@ export class ChatGptPlanTranscriptPolisher implements TranscriptPolisher {
   }
 }
 
-export const chatGptPlanInternals = { chunkSegments, parseSse, validatePolishedSegments };
+export const chatGptPlanInternals = { chatGptError, chunkSegments, parseSse, validatePolishedSegments };

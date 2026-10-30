@@ -9,5 +9,6 @@ export interface Transcript {
   segments: TranscriptSegment[];
   languageDetected?: string;
   providerMetadata?: Record<string, unknown>;
+  postProcessingMetadata?: Record<string, unknown>;
 }
 

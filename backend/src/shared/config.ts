@@ -37,6 +37,11 @@ const configSchema = z
     JOB_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(3),
     WHISPER_TIMEOUT_MS: z.coerce.number().int().positive().default(7_200_000),
     DEFAULT_MODEL: z.string().min(1).default('base'),
+    CHATGPT_POLISH_ENABLED: booleanString,
+    CHATGPT_PLAN_CREDENTIALS_PATH: z.string().min(1).default('/chatgpt/chatgpt-plan.json'),
+    CHATGPT_POLISH_MODEL: z.string().min(1).default('gpt-6.1-sol'),
+    CHATGPT_POLISH_TIMEOUT_MS: z.coerce.number().int().positive().default(600_000),
+    CHATGPT_POLISH_CHUNK_CHARS: z.coerce.number().int().min(1_000).max(100_000).default(20_000),
     CORS_ORIGINS: z.string().optional(),
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100),
     RATE_LIMIT_WINDOW: z.string().default('1 minute'),
@@ -88,6 +93,11 @@ export type Config = Readonly<{
   jobMaxAttempts: number;
   whisperTimeoutMs: number;
   defaultModel: string;
+  chatGptPolishEnabled: boolean;
+  chatGptPlanCredentialsPath: string;
+  chatGptPolishModel: string;
+  chatGptPolishTimeoutMs: number;
+  chatGptPolishChunkChars: number;
   corsOrigins: string[];
   rateLimitMax: number;
   rateLimitWindow: string;
@@ -133,6 +143,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     jobMaxAttempts: parsed.JOB_MAX_ATTEMPTS,
     whisperTimeoutMs: parsed.WHISPER_TIMEOUT_MS,
     defaultModel: parsed.DEFAULT_MODEL,
+    chatGptPolishEnabled: parsed.CHATGPT_POLISH_ENABLED,
+    chatGptPlanCredentialsPath: path.resolve(parsed.CHATGPT_PLAN_CREDENTIALS_PATH),
+    chatGptPolishModel: parsed.CHATGPT_POLISH_MODEL,
+    chatGptPolishTimeoutMs: parsed.CHATGPT_POLISH_TIMEOUT_MS,
+    chatGptPolishChunkChars: parsed.CHATGPT_POLISH_CHUNK_CHARS,
     corsOrigins: parsed.CORS_ORIGINS?.split(',').map((item) => item.trim()).filter(Boolean) ?? [],
     rateLimitMax: parsed.RATE_LIMIT_MAX,
     rateLimitWindow: parsed.RATE_LIMIT_WINDOW,

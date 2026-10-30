@@ -10,6 +10,7 @@ import { renderTxt } from '../shared/export/txt.js';
 import type { Transcript } from '../shared/export/types.js';
 import { renderVtt } from '../shared/export/vtt.js';
 import type { TranscriptionProvider } from '../shared/providers/interface.js';
+import type { TranscriptPolisher } from '../shared/postprocess/interface.js';
 import type { JobRepository } from '../shared/queue/repository.js';
 import type { Job, OutputFormat } from '../shared/queue/types.js';
 import { ensureStorage, moveUploadIntoPlace, removePath } from '../shared/storage/files.js';
@@ -44,6 +45,7 @@ export class WorkerService {
     config: Config;
     repository: JobRepository;
     provider: TranscriptionProvider;
+    polisher?: TranscriptPolisher;
     youtubeDownloader: YoutubeDownloader;
     workerId: string;
     logger: FastifyBaseLogger;
@@ -103,7 +105,7 @@ export class WorkerService {
   }
 
   private async process(job: Job, shutdownSignal: AbortSignal): Promise<void> {
-    const { config, repository, provider, youtubeDownloader, workerId, logger } = this.dependencies;
+    const { config, repository, provider, polisher, youtubeDownloader, workerId, logger } = this.dependencies;
     const leaseOwner = job.leaseOwner;
     if (!leaseOwner) throw new AppError('WORKER_LEASE_LOST', 'Claimed job has no lease owner.', 503, true);
     const controller = new AbortController();
@@ -166,11 +168,22 @@ export class WorkerService {
       }
       this.throwIfInterrupted(job.id, leaseOwner, controller.signal);
       this.setPhase(job.id, leaseOwner, 'exporting');
-      const published = await this.publish(currentJob, leaseOwner, transcript);
+      const polishResult = polisher
+        ? await polisher.polish({ transcript, language: currentJob.language, signal: controller.signal })
+        : null;
+      this.throwIfInterrupted(job.id, leaseOwner, controller.signal);
+      const finalTranscript = polishResult?.transcript ?? transcript;
+      const published = await this.publish(currentJob, leaseOwner, finalTranscript, polishResult ? transcript : undefined);
       const completed = repository.complete(job.id, leaseOwner, published.relativePath, {
         formats: currentJob.requestedOutputFormats,
-        languageDetected: transcript.languageDetected ?? null,
+        languageDetected: finalTranscript.languageDetected ?? null,
         provider: provider.name,
+        postProcessing: polishResult ? {
+          status: 'completed',
+          provider: polisher?.name,
+          model: polishResult.model,
+          rawFilesPreserved: true,
+        } : null,
       });
       if (!completed) {
         const current = repository.get(job.id);
@@ -224,7 +237,7 @@ export class WorkerService {
     this.dependencies.logger.info({ jobId, status: 'processing', phase }, 'job phase changed');
   }
 
-  private async publish(job: Job, leaseOwner: string, transcript: Transcript): Promise<{ relativePath: string; absolutePath: string }> {
+  private async publish(job: Job, leaseOwner: string, transcript: Transcript, rawTranscript?: Transcript): Promise<{ relativePath: string; absolutePath: string }> {
     const { config } = this.dependencies;
     const stagingRelative = tempRelativePath(job.id, `${leaseOwner}-result-${randomUUID()}`);
     const staging = resolveInside(config.dataDir, stagingRelative);
@@ -237,6 +250,10 @@ export class WorkerService {
       for (const format of job.requestedOutputFormats) {
         const file = path.join(staging, `transcript.${format}`);
         await fs.promises.writeFile(file, render(format, transcript), { mode: 0o600, flag: 'wx' });
+        if (rawTranscript) {
+          const rawFile = path.join(staging, `transcript.raw.${format}`);
+          await fs.promises.writeFile(rawFile, render(format, rawTranscript), { mode: 0o600, flag: 'wx' });
+        }
       }
       this.throwIfInterrupted(job.id, leaseOwner, new AbortController().signal);
       await fs.promises.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });

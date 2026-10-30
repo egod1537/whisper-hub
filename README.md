@@ -186,6 +186,20 @@ Input is converted with fixed `ffmpeg` arguments to mono 16 kHz signed 16-bit PC
 
 `whisper.cpp v1.9.5` is requested with `/inference`, `response_format=verbose_json`, and the job language. SRT/VTT are produced only from real `start`/`end` segment timestamps. A provider response without reliable timestamps fails instead of inventing them. `auto` language detection requires the configured multilingual host model.
 
+### Optional ChatGPT transcript polishing
+
+The worker can pass Whisper's text segments through the official ChatGPT sign-in token flow before publishing results. GPT may correct spacing, punctuation, and context-supported recognition mistakes, but it must preserve segment count, order, timestamps, meaning, and language. Requested `transcript.txt`, `.srt`, `.vtt`, and `.json` files contain the polished result; matching `transcript.raw.*` files remain beside them as the unmodified Whisper output. The JSON result and job metadata identify the post-processor and model. If polishing fails, the job follows the normal retry/failure policy instead of silently presenting raw text as polished output.
+
+Enable it only after placing an owner-readable (`0600`) SIWC credential at `CHATGPT_CREDENTIALS_DIR/chatgpt-plan.json`:
+
+```sh
+CHATGPT_POLISH_ENABLED=true
+CHATGPT_CREDENTIALS_DIR=/absolute/path/to/the/credential-directory
+CHATGPT_POLISH_MODEL=gpt-6.1-sol
+```
+
+Only the worker receives this directory, mounted at `/chatgpt`; the API and frontend cannot read it. The access token is refreshed in the worker and the rotated refresh token is atomically written back, so the host directory must be writable. Never place the credential under `data/results`, commit it, or expose it through an API. ChatGPT-plan availability and usage limits remain subject to the signed-in account.
+
 ## Retention, cleanup, and privacy
 
 Defaults are completed job retention 7 days, failed/canceled retention 3 days, completed/canceled source retention 1 day, and incomplete upload expiry 24 hours. Cleanup expires incomplete sessions, removes terminal-session staging and stale `.partial` files, and never removes a finalizing session or queued job source. Failed source files remain until failed-job expiry so an explicit retry remains possible. Active queued or processing jobs are never deleted.

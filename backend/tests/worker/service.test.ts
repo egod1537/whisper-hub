@@ -6,6 +6,7 @@ import { AppError } from '../../src/shared/errors.js';
 import { WorkerService } from '../../src/worker/service.js';
 import { resolveInside, sourceRelativePath } from '../../src/shared/storage/paths.js';
 import type { YoutubeDownloader } from '../../src/shared/youtube/downloader.js';
+import type { TranscriptPolisher } from '../../src/shared/postprocess/interface.js';
 import type { TestContext } from '../helpers.js';
 import { createTestContext, makeWav } from '../helpers.js';
 
@@ -25,10 +26,13 @@ function createJob(id: string, data = makeWav(), maxAttempts = 3) {
   });
 }
 
-function worker(youtubeDownloader: YoutubeDownloader = { async download() { throw new Error('unexpected YouTube download'); } }) {
+function worker(
+  youtubeDownloader: YoutubeDownloader = { async download() { throw new Error('unexpected YouTube download'); } },
+  polisher?: TranscriptPolisher,
+) {
   return new WorkerService({
     config: context.config, repository: context.repository, provider: context.provider,
-    youtubeDownloader, workerId: 'test-worker', logger: pino({ level: 'silent' }),
+    ...(polisher ? { polisher } : {}), youtubeDownloader, workerId: 'test-worker', logger: pino({ level: 'silent' }),
   });
 }
 
@@ -86,6 +90,54 @@ describe('worker', () => {
     expect(retried.status).toBe('queued');
     expect(retried.nextAttemptAt).not.toBeNull();
     expect(retried.resultBasePath).toBeNull();
+  });
+
+  it('publishes GPT-polished outputs and preserves the raw Whisper outputs', async () => {
+    createJob('job-polished');
+    const polisher: TranscriptPolisher = {
+      name: 'fake-gpt',
+      async polish(input) {
+        return {
+          model: 'gpt-test',
+          transcript: {
+            ...input.transcript,
+            text: '안녕하세요. World!',
+            segments: input.transcript.segments.map((segment, index) => ({
+              ...segment,
+              text: index === 0 ? '안녕하세요.' : 'World!',
+            })),
+            postProcessingMetadata: { provider: 'fake-gpt', model: 'gpt-test', rawFilesPreserved: true },
+          },
+        };
+      },
+    };
+
+    await worker(undefined, polisher).runOnce();
+    const completed = context.repository.getRequired('job-polished');
+    const resultDirectory = resolveInside(context.directory, completed.resultBasePath!);
+    expect(fs.readFileSync(path.join(resultDirectory, 'transcript.txt'), 'utf8')).toBe('안녕하세요. World!\n');
+    expect(fs.readFileSync(path.join(resultDirectory, 'transcript.raw.txt'), 'utf8')).toBe('안녕하세요 world\n');
+    expect(JSON.parse(fs.readFileSync(path.join(resultDirectory, 'transcript.json'), 'utf8'))).toMatchObject({
+      postProcessingMetadata: { provider: 'fake-gpt', model: 'gpt-test', rawFilesPreserved: true },
+    });
+    expect(completed.resultMetadata).toMatchObject({
+      postProcessing: { status: 'completed', provider: 'fake-gpt', model: 'gpt-test', rawFilesPreserved: true },
+    });
+    for (const format of completed.requestedOutputFormats) {
+      expect(fs.existsSync(path.join(resultDirectory, `transcript.raw.${format}`))).toBe(true);
+    }
+  });
+
+  it('retries a transient GPT failure without publishing raw output as final', async () => {
+    createJob('job-polish-retry');
+    const polisher: TranscriptPolisher = {
+      name: 'fake-gpt',
+      async polish() { throw new AppError('GPT_UNAVAILABLE', 'GPT unavailable.', 503, true); },
+    };
+    await worker(undefined, polisher).runOnce();
+    expect(context.repository.getRequired('job-polish-retry')).toMatchObject({
+      status: 'queued', errorCode: 'GPT_UNAVAILABLE', resultBasePath: null,
+    });
   });
 
   it('does not complete when cancellation is requested while provider runs', async () => {

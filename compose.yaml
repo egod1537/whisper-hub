@@ -25,6 +25,11 @@ x-common-environment: &common-environment
   JOB_MAX_ATTEMPTS: ${JOB_MAX_ATTEMPTS:-3}
   WHISPER_TIMEOUT_MS: ${WHISPER_TIMEOUT_MS:-7200000}
   DEFAULT_MODEL: ${DEFAULT_MODEL:-base}
+  CHATGPT_POLISH_ENABLED: ${CHATGPT_POLISH_ENABLED:-false}
+  CHATGPT_PLAN_CREDENTIALS_PATH: /chatgpt/chatgpt-plan.json
+  CHATGPT_POLISH_MODEL: ${CHATGPT_POLISH_MODEL:-gpt-6.1-sol}
+  CHATGPT_POLISH_TIMEOUT_MS: ${CHATGPT_POLISH_TIMEOUT_MS:-600000}
+  CHATGPT_POLISH_CHUNK_CHARS: ${CHATGPT_POLISH_CHUNK_CHARS:-20000}
   COMPLETED_RETENTION_DAYS: ${COMPLETED_RETENTION_DAYS:-7}
   FAILED_RETENTION_DAYS: ${FAILED_RETENTION_DAYS:-3}
   SOURCE_RETENTION_DAYS: ${SOURCE_RETENTION_DAYS:-1}
@@ -72,6 +77,9 @@ services:
       migrate:
         condition: service_completed_successfully
     stop_grace_period: 30s
+    volumes:
+      - ./data:/data
+      - ${CHATGPT_CREDENTIALS_DIR:-./data/chatgpt-credentials}:/chatgpt
 
   upload-finalizer:
     <<: *common

@@ -15,7 +15,25 @@ describe('configuration', () => {
   });
 
   it('allows an explicit test mode without a key', () => {
-    expect(loadConfig({ TEST_MODE: 'true', DATA_DIR: '/tmp/whisper-hub-config-test' }).testMode).toBe(true);
+    const config = loadConfig({ TEST_MODE: 'true', DATA_DIR: '/tmp/whisper-hub-config-test' });
+    expect(config.testMode).toBe(true);
+    expect(config.chatGptPolishEnabled).toBe(false);
+    expect(config.chatGptPolishModel).toBe('gpt-6.1-sol');
+  });
+
+  it('loads ChatGPT polishing configuration explicitly', () => {
+    const config = loadConfig({
+      TEST_MODE: 'true', DATA_DIR: '/tmp/whisper-hub-config-test', CHATGPT_POLISH_ENABLED: 'true',
+      CHATGPT_PLAN_CREDENTIALS_PATH: '/tmp/chatgpt-plan.json', CHATGPT_POLISH_MODEL: 'gpt-test',
+      CHATGPT_POLISH_TIMEOUT_MS: '12345', CHATGPT_POLISH_CHUNK_CHARS: '5000',
+    });
+    expect(config).toMatchObject({
+      chatGptPolishEnabled: true,
+      chatGptPlanCredentialsPath: '/tmp/chatgpt-plan.json',
+      chatGptPolishModel: 'gpt-test',
+      chatGptPolishTimeoutMs: 12_345,
+      chatGptPolishChunkChars: 5_000,
+    });
   });
 
   it('validates resumable chunk and aggregate limits', () => {

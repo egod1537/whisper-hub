@@ -3,7 +3,8 @@ set -eu
 
 WHISPER_CPP_TAG="v1.9.5"
 WHISPER_CPP_DIR="${WHISPER_CPP_DIR:-${HOME}/.local/share/whisper-hub/whisper.cpp}"
-MODEL_SHA256="60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe"
+MODEL_NAME="large-v3"
+MODEL_SHA256="64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2"
 
 if [ "$(uname -s)" != "Darwin" ]; then
   echo "This setup script is for macOS." >&2
@@ -28,9 +29,9 @@ cmake -S "$WHISPER_CPP_DIR" -B "$WHISPER_CPP_DIR/build" -DGGML_METAL=ON -DCMAKE_
 cmake --build "$WHISPER_CPP_DIR/build" --config Release -j "$(sysctl -n hw.logicalcpu)"
 
 mkdir -p "$WHISPER_CPP_DIR/models"
-MODEL_PATH="$WHISPER_CPP_DIR/models/ggml-base.bin"
+MODEL_PATH="$WHISPER_CPP_DIR/models/ggml-$MODEL_NAME.bin"
 if [ ! -f "$MODEL_PATH" ]; then
-  "$WHISPER_CPP_DIR/models/download-ggml-model.sh" base "$WHISPER_CPP_DIR/models"
+  "$WHISPER_CPP_DIR/models/download-ggml-model.sh" "$MODEL_NAME" "$WHISPER_CPP_DIR/models"
 fi
 ACTUAL_SHA256="$(shasum -a 256 "$MODEL_PATH" | awk '{print $1}')"
 if [ "$ACTUAL_SHA256" != "$MODEL_SHA256" ]; then
@@ -38,6 +39,6 @@ if [ "$ACTUAL_SHA256" != "$MODEL_SHA256" ]; then
   exit 1
 fi
 
-echo "whisper.cpp $WHISPER_CPP_TAG built with Metal and multilingual base model verified."
+echo "whisper.cpp $WHISPER_CPP_TAG built with Metal and multilingual $MODEL_NAME model verified."
 echo "Start it with: WHISPER_CPP_DIR='$WHISPER_CPP_DIR' ./scripts/start-macos-whisper.sh"
 

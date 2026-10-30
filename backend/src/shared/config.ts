@@ -36,7 +36,7 @@ const configSchema = z
     JOB_LEASE_SECONDS: z.coerce.number().int().min(60).default(900),
     JOB_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(20).default(3),
     WHISPER_TIMEOUT_MS: z.coerce.number().int().positive().default(7_200_000),
-    DEFAULT_MODEL: z.string().min(1).default('base'),
+    DEFAULT_MODEL: z.string().min(1).default('large-v3'),
     CHATGPT_POLISH_ENABLED: booleanString,
     CHATGPT_PLAN_CREDENTIALS_PATH: z.string().min(1).default('/chatgpt/chatgpt-plan.json'),
     CHATGPT_POLISH_MODEL: z.string().min(1).default('gpt-5.6-sol'),

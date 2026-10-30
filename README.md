@@ -34,7 +34,7 @@ The API never runs inference or waits for a transcript. It returns `202`, and th
 - Node.js 22+ and pnpm 10 only for local development; production runs in Docker
 - `ffmpeg` for local worker tests (`brew install ffmpeg`); the worker image already includes it
 
-The native setup uses the pinned official `whisper.cpp` tag `v1.9.5`, enables `GGML_METAL`, downloads the multilingual `base` model, and verifies its published SHA-256. Korean and Japanese require a multilingual model such as `base`, not a `*.en` model.
+The native setup uses the pinned official `whisper.cpp` tag `v1.9.5`, enables `GGML_METAL`, downloads the multilingual `large-v3` model (about 2.9 GiB), and verifies its published SHA-256. Korean and Japanese require a multilingual model, not a `*.en` model. Set `WHISPER_MODEL` when starting the native server only when intentionally overriding the default with another already-downloaded model.
 
 ## Secure local quickstart
 

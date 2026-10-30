@@ -17,6 +17,7 @@ describe('configuration', () => {
   it('allows an explicit test mode without a key', () => {
     const config = loadConfig({ TEST_MODE: 'true', DATA_DIR: '/tmp/whisper-hub-config-test' });
     expect(config.testMode).toBe(true);
+    expect(config.defaultModel).toBe('large-v3');
     expect(config.chatGptPolishEnabled).toBe(false);
     expect(config.chatGptPolishModel).toBe('gpt-5.6-sol');
   });

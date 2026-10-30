@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { OverlayToaster } from '@blueprintjs/core';
 import { describe, expect, it, vi } from 'vitest';
 import { ApiError, type WhisperApi } from '../api/client';
 import { JobsList } from '../components/JobsList';
@@ -34,6 +35,7 @@ function resultApi(text: string): WhisperApi {
 
 describe('job actions and results', () => {
   it('filters by origin and exposes only legal pause, resume, cancel, retry, and result actions', async () => {
+    vi.spyOn(OverlayToaster, 'create').mockResolvedValue({ show: vi.fn() } as never);
     const user = userEvent.setup();
     const onCancel = vi.fn().mockResolvedValue(true);
     const onPause = vi.fn().mockResolvedValue(true);
@@ -62,6 +64,7 @@ describe('job actions and results', () => {
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '영구 취소' }));
     expect(onCancel).toHaveBeenCalledWith('queued');
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /재개$/ }));
     expect(onResume).toHaveBeenCalledWith('paused');
     await user.click(screen.getByRole('button', { name: /재시도$/ }));

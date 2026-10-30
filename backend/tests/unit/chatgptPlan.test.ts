@@ -59,7 +59,14 @@ describe('ChatGPT plan transcript polishing', () => {
       expect(request.store).toBe(false);
       expect(request.stream).toBe(true);
       expect(request.text.format.type).toBe('json_schema');
-      expect(JSON.parse(request.input[0].content)).toMatchObject({ sourceTitle: '월드 인사말.mp4' });
+      expect(request.instructions).toContain('faithful transcription, not translation');
+      expect(request.instructions).toContain('[unclear: ...]');
+      expect(request.instructions).toContain('Return exactly one item for every input segment');
+      expect(JSON.parse(request.input[0].content)).toMatchObject({
+        context: { title: '월드 인사말.mp4', domain: null },
+        languageHint: 'ko',
+        rawTranscript: { segments: [{ index: 0, text: '안녕하세요' }, { index: 1, text: 'world' }] },
+      });
       expect(init?.headers).toMatchObject({ authorization: 'Bearer access-old' });
       return sse({ segments: [{ index: 0, text: '안녕하세요.' }, { index: 1, text: '월드!' }] });
     });

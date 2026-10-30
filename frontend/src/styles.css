@@ -234,16 +234,46 @@ button, input, select { font: inherit; }
 }
 
 .job-progress {
-  display: grid;
-  grid-template-columns: minmax(90px, 1fr) auto;
-  align-items: center;
-  gap: 8px;
+  display: block;
   margin-top: 7px;
   color: #5f6b7c;
   font-size: 11px;
 }
 
+.job-progress-copy {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.job-progress-copy strong {
+  flex: 0 0 auto;
+  color: #1c2127;
+  font-size: 12px;
+}
+
+.job-progress-copy span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
 .job-progress .bp6-progress-bar { margin: 0; }
+
+.job-progress-detail {
+  display: block;
+  margin-top: 4px;
+  text-align: right;
+}
+
+.job-progress-state {
+  display: block;
+  margin-top: 7px;
+  color: #5f6b7c;
+  font-size: 11px;
+}
 
 .job-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; padding-right: 6px; }
 .transcript-panel { margin-top: 16px; }

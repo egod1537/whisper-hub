@@ -107,8 +107,26 @@ describe('job actions and results', () => {
       onCancel={vi.fn()} onPause={vi.fn()} onResume={vi.fn()} onRetry={vi.fn()}
     />);
 
-    expect(screen.getByText('25% · 0:30 / 2:00')).toBeInTheDocument();
-    expect(screen.getByLabelText('음성 변환 진행률 25%')).toBeInTheDocument();
+    expect(screen.getByText('현재 단계 25% · 0:30 / 2:00')).toBeInTheDocument();
+    expect(screen.getByText('단계 기준 34%')).toBeInTheDocument();
+    expect(screen.getByText('음성을 전사용 형식으로 변환 중')).toBeInTheDocument();
+    expect(screen.getByLabelText('음성을 전사용 형식으로 변환 중 단계 기준 진행률 34%')).toBeInTheDocument();
+  });
+
+  it('shows a percent and current task for every non-terminal queue item', () => {
+    const transcribing: JobSummary = { ...summary('processing'), phase: 'transcribing' };
+    render(<JobsList
+      jobs={[summary('queued'), transcribing, summary('paused'), summary('completed')]}
+      selectedId={null} selectedJob={null} originFilter="web" systemStatus={null}
+      loading={false} stale={false} error={null} nextCursor={null} pendingActionIds={new Set()}
+      onOriginFilter={vi.fn()} onSelect={vi.fn()} onRefresh={vi.fn()} onLoadMore={vi.fn()}
+      onCancel={vi.fn()} onPause={vi.fn()} onResume={vi.fn()} onRetry={vi.fn()}
+    />);
+
+    expect(screen.getAllByText('0%')).toHaveLength(2);
+    expect(screen.getByText('단계 기준 55%')).toBeInTheDocument();
+    expect(screen.getByText('Whisper로 음성을 전사하는 중')).toBeInTheDocument();
+    expect(screen.getByText('100%')).toBeInTheDocument();
   });
 
   it('does not request a TXT preview when TXT was not produced', async () => {

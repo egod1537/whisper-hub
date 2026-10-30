@@ -10,7 +10,11 @@ const statusLabels: Record<JobStatus, string> = {
 };
 
 const phaseLabels: Record<JobPhase, string> = {
-  fetching: 'YouTube 가져오기', validating: '파일 확인', converting: '음성 변환', transcribing: '전사', exporting: 'GPT 다듬기·결과 생성',
+  fetching: 'YouTube 영상 내려받는 중',
+  validating: '미디어 파일 확인 중',
+  converting: '음성을 전사용 형식으로 변환 중',
+  transcribing: 'Whisper로 음성을 전사하는 중',
+  exporting: 'GPT 교정 및 결과 파일 생성 중',
 };
 
 const statusIntent: Record<JobStatus, 'none' | 'primary' | 'success' | 'danger' | 'warning'> = {
@@ -46,6 +50,57 @@ function progressLabel(progress: JobProgress): string {
   }
   const format = (seconds: number) => `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`;
   return `${percent}% · ${format(progress.current)} / ${format(progress.total)}`;
+}
+
+interface JobProgressView {
+  percent: number | null;
+  estimated: boolean;
+  task: string;
+  detail: string | null;
+  running: boolean;
+}
+
+const phaseProgress: Record<JobPhase, { start: number; end: number }> = {
+  fetching: { start: 5, end: 20 },
+  validating: { start: 25, end: 25 },
+  converting: { start: 30, end: 45 },
+  transcribing: { start: 55, end: 55 },
+  exporting: { start: 90, end: 90 },
+};
+
+function activeProgress(job: JobSummary): number {
+  if (!job.phase) return 1;
+  const range = phaseProgress[job.phase];
+  const measured = job.progress ? Math.min(100, Math.max(0, job.progress.percent)) / 100 : 0;
+  return Math.round(range.start + ((range.end - range.start) * measured));
+}
+
+export function jobProgressView(job: JobSummary): JobProgressView {
+  if (job.status === 'completed') {
+    return { percent: 100, estimated: false, task: '전사와 결과 생성이 완료되었습니다.', detail: null, running: false };
+  }
+  if (job.status === 'queued') {
+    const position = job.queuePosition === null ? '' : ` · 대기 순번 ${job.queuePosition}`;
+    return { percent: 0, estimated: false, task: `작업 시작을 기다리는 중${position}`, detail: null, running: false };
+  }
+  if (job.status === 'paused') {
+    return { percent: 0, estimated: false, task: '일시 중지됨 · 재개하면 처음부터 다시 처리합니다.', detail: null, running: false };
+  }
+  if (job.status === 'failed') {
+    return { percent: null, estimated: false, task: '오류로 작업이 중단되었습니다.', detail: null, running: false };
+  }
+  if (job.status === 'canceled') {
+    return { percent: null, estimated: false, task: '사용자가 작업을 취소했습니다.', detail: null, running: false };
+  }
+
+  const currentTask = job.phase ? phaseLabels[job.phase] : '작업 환경 준비 중';
+  return {
+    percent: activeProgress(job),
+    estimated: true,
+    task: job.status === 'pausing' ? `안전하게 일시 중지하는 중 · ${currentTask}` : currentTask,
+    detail: job.progress ? progressLabel(job.progress) : null,
+    running: true,
+  };
 }
 
 export type OriginFilter = JobOrigin | 'all';
@@ -129,6 +184,7 @@ export function JobsList(props: JobsListProps) {
           {props.jobs.map((job) => {
             const pending = props.pendingActionIds.has(job.id);
             const detail = props.selectedJob?.id === job.id ? props.selectedJob : null;
+            const progress = jobProgressView(job);
             return (
               <li key={job.id} className={props.selectedId === job.id ? 'job-row selected' : 'job-row'}>
                 <button type="button" className="job-main" onClick={() => props.onSelect(job.id)} aria-pressed={props.selectedId === job.id}>
@@ -137,16 +193,29 @@ export function JobsList(props: JobsListProps) {
                     <Tag minimal>{originLabels[job.origin]}</Tag>
                     <Tag minimal intent={statusIntent[job.status]}>{statusLabels[job.status]}</Tag>
                     {(job.status === 'processing' || job.status === 'pausing') && <Spinner size={14} />}
-                    {job.phase && <span>{phaseLabels[job.phase]}</span>}
                     {detail && <span>{languageLabel(detail.language)}</span>}
                     <span>{createdTime(job.createdAt)}</span>
                     {job.queuePosition !== null && <span>대기 #{job.queuePosition}</span>}
                   </span>
-                  {job.progress && (
-                    <span className="job-progress" aria-label={`${phaseLabels[job.phase ?? 'validating']} 진행률 ${job.progress.percent}%`}>
-                      <ProgressBar value={job.progress.percent / 100} animate={false} stripes={false} />
-                      <span>{progressLabel(job.progress)}</span>
+                  {progress.percent !== null ? (
+                    <span
+                      className="job-progress"
+                      aria-label={`${progress.task} ${progress.estimated ? '단계 기준 ' : ''}진행률 ${progress.percent}%`}
+                    >
+                      <span className="job-progress-copy">
+                        <strong>{progress.estimated ? `단계 기준 ${progress.percent}%` : `${progress.percent}%`}</strong>
+                        <span>{progress.task}</span>
+                      </span>
+                      <ProgressBar
+                        value={progress.percent / 100}
+                        intent={job.status === 'completed' ? 'success' : 'primary'}
+                        animate={progress.running && !job.progress}
+                        stripes={progress.running && !job.progress}
+                      />
+                      {progress.detail && <span className="job-progress-detail">현재 단계 {progress.detail}</span>}
                     </span>
+                  ) : (
+                    <span className="job-progress-state">{progress.task}</span>
                   )}
                   {job.error && <span className="job-error">{job.error.message}</span>}
                 </button>

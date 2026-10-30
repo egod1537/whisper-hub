@@ -3,6 +3,7 @@ import type { Transcript } from '../export/types.js';
 export interface TranscriptPolishInput {
   transcript: Transcript;
   language: string;
+  sourceTitle: string;
   signal: AbortSignal;
 }
 

@@ -74,8 +74,17 @@ describe('worker', () => {
     };
 
     const updateProgress = vi.spyOn(context.repository, 'updateProgress');
-    expect(await worker(downloader).runOnce()).toBe(true);
+    let sourceTitle = '';
+    const polisher: TranscriptPolisher = {
+      name: 'fake-gpt',
+      async polish(input) {
+        sourceTitle = input.sourceTitle;
+        return { model: 'gpt-test', transcript: input.transcript };
+      },
+    };
+    expect(await worker(downloader, polisher).runOnce()).toBe(true);
     expect(updateProgress).toHaveBeenCalledWith(id, expect.any(String), 'fetching', 25, 100, 'bytes');
+    expect(sourceTitle).toBe('테스트 영상.webm');
     expect(context.repository.getRequired(id)).toMatchObject({
       status: 'completed', originalFilename: '테스트 영상.webm', mediaType: 'audio/webm', sourceType: 'youtube',
     });
@@ -97,6 +106,7 @@ describe('worker', () => {
     const polisher: TranscriptPolisher = {
       name: 'fake-gpt',
       async polish(input) {
+        expect(input.sourceTitle).toBe('job-polished.wav');
         return {
           model: 'gpt-test',
           transcript: {

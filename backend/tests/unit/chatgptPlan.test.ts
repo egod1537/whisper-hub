@@ -59,12 +59,14 @@ describe('ChatGPT plan transcript polishing', () => {
       expect(request.store).toBe(false);
       expect(request.stream).toBe(true);
       expect(request.text.format.type).toBe('json_schema');
+      expect(JSON.parse(request.input[0].content)).toMatchObject({ sourceTitle: '월드 인사말.mp4' });
       expect(init?.headers).toMatchObject({ authorization: 'Bearer access-old' });
       return sse({ segments: [{ index: 0, text: '안녕하세요.' }, { index: 1, text: '월드!' }] });
     });
 
     const result = await polisher(file, fetchFn, now).polish({
       language: 'ko',
+      sourceTitle: '월드 인사말.mp4',
       signal: new AbortController().signal,
       transcript: {
         text: '안녕하세요 world',
@@ -109,7 +111,7 @@ describe('ChatGPT plan transcript polishing', () => {
     });
 
     await polisher(file, fetchFn, now).polish({
-      language: 'ko', signal: new AbortController().signal,
+      language: 'ko', sourceTitle: '교정 테스트.wav', signal: new AbortController().signal,
       transcript: { text: '교정됨', segments: [{ startMs: 0, endMs: 100, text: '교정됨' }] },
     });
 
@@ -123,7 +125,7 @@ describe('ChatGPT plan transcript polishing', () => {
     const file = credentialsFile(now);
     const fetchFn = vi.fn<typeof fetch>(async () => sse({ segments: [] }));
     await expect(polisher(file, fetchFn, now).polish({
-      language: 'ko', signal: new AbortController().signal,
+      language: 'ko', sourceTitle: '원문.wav', signal: new AbortController().signal,
       transcript: { text: '원문', segments: [{ startMs: 0, endMs: 100, text: '원문' }] },
     })).rejects.toMatchObject({ code: 'GPT_INVALID_RESPONSE', retryable: true });
   });

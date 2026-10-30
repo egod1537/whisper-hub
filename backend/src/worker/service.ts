@@ -169,7 +169,12 @@ export class WorkerService {
       this.throwIfInterrupted(job.id, leaseOwner, controller.signal);
       this.setPhase(job.id, leaseOwner, 'exporting');
       const polishResult = polisher
-        ? await polisher.polish({ transcript, language: currentJob.language, signal: controller.signal })
+        ? await polisher.polish({
+          transcript,
+          language: currentJob.language,
+          sourceTitle: currentJob.originalFilename,
+          signal: controller.signal,
+        })
         : null;
       this.throwIfInterrupted(job.id, leaseOwner, controller.signal);
       const finalTranscript = polishResult?.transcript ?? transcript;

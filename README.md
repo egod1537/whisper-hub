@@ -195,7 +195,7 @@ Enable it only after placing an owner-readable (`0600`) SIWC credential at `CHAT
 ```sh
 CHATGPT_POLISH_ENABLED=true
 CHATGPT_CREDENTIALS_DIR=/absolute/path/to/the/credential-directory
-CHATGPT_POLISH_MODEL=gpt-6.1-sol
+CHATGPT_POLISH_MODEL=gpt-5.6-sol
 ```
 
 Only the worker receives this directory, mounted at `/chatgpt`; the API and frontend cannot read it. The access token is refreshed in the worker and the rotated refresh token is atomically written back, so the host directory must be writable. Never place the credential under `data/results`, commit it, or expose it through an API. ChatGPT-plan availability and usage limits remain subject to the signed-in account.

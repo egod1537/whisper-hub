@@ -18,7 +18,7 @@ describe('configuration', () => {
     const config = loadConfig({ TEST_MODE: 'true', DATA_DIR: '/tmp/whisper-hub-config-test' });
     expect(config.testMode).toBe(true);
     expect(config.chatGptPolishEnabled).toBe(false);
-    expect(config.chatGptPolishModel).toBe('gpt-6.1-sol');
+    expect(config.chatGptPolishModel).toBe('gpt-5.6-sol');
   });
 
   it('loads ChatGPT polishing configuration explicitly', () => {

@@ -39,7 +39,7 @@ const configSchema = z
     DEFAULT_MODEL: z.string().min(1).default('base'),
     CHATGPT_POLISH_ENABLED: booleanString,
     CHATGPT_PLAN_CREDENTIALS_PATH: z.string().min(1).default('/chatgpt/chatgpt-plan.json'),
-    CHATGPT_POLISH_MODEL: z.string().min(1).default('gpt-6.1-sol'),
+    CHATGPT_POLISH_MODEL: z.string().min(1).default('gpt-5.6-sol'),
     CHATGPT_POLISH_TIMEOUT_MS: z.coerce.number().int().positive().default(600_000),
     CHATGPT_POLISH_CHUNK_CHARS: z.coerce.number().int().min(1_000).max(100_000).default(20_000),
     CORS_ORIGINS: z.string().optional(),
